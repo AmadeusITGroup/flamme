@@ -2,7 +2,7 @@
 
 ## Async Components
 
-In a traditional microservice architecture, microservices often call external services. Such calls should be made asynchronously, i.e. the service should not block while waiting for a response from an external service. The same goes for Flamme components: when Flamme executes a component, it does so by leveraging virtual threads.
+In a traditional microservice architecture, microservices often call external services. Such calls should be made asynchronously, i.e. the service should not block while waiting for a response from an external service. The same goes for Flamme components: when Flamme executes a component, it does so by leveraging virtual threads .
 
 Virtual threads are a feature introduced in Java 21. They execute code on regular OS threads, but when blocking code is run inside a virtual thread, the underlying platform thread picks up another virtual thread instead of staying blocked. What's great about virtual threads is that the code you write can look blocking, while your application isn't really blocked. This is in contrast to using `CompletableFuture`, where your code becomes entangled in nested callbacks within nested callbacks, and your application's behavior becomes unclear when reading the code.
 

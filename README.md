@@ -26,13 +26,11 @@ Add the Flamme dependency to your `pom.xml`:
 </dependency>
 ```
 
----
 
 ## Documentation
 
 Full documentation is available at [amadeusitgroup.github.io/flamme](https://amadeusitgroup.github.io/flamme).
 
----
 
 ## License
 
