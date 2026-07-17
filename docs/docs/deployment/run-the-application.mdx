@@ -1,0 +1,220 @@
+import Mermaid from "@theme/Mermaid";
+
+# Run the Application
+
+## Transport
+
+In this section we will finally make communication happen between two components.
+Let's consider the following topology:`ComponentA` publishes a message to the subject `message-published-a`, and Components B and C both listen to that subject.
+
+```java
+@Flamme(
+    serviceName="component-a",
+    consumes = {},
+    produces = {"message-published-a"}
+    // multipayload keys definition goes here.
+    mutlipayloadKeys = {}
+)
+public interface ComponentA {
+    Map<String, Message> execute(Map<String, Message>)
+}
+
+@Flamme(
+    serviceName="component-b",
+    consumes = {"message-published-a"},
+    produces = {"message-published-b"},
+    // multipayload keys definition goes here.
+    mutlipayloadKeys = {}
+)
+public interface ComponentB {
+    Map<String, Message> execute(Map<String, Message>)
+}
+
+@Flamme(
+    serviceName="component-c",
+    consumes = {"message-published-a"},
+    produces = {"message-published-c"}
+    // multipayload keys definition goes here.
+    mutlipayloadKeys = {}
+)
+public interface ComponentC {
+    Map<String, Message> execute(Map<String, Message>)
+}
+```
+
+The `@Flamme` annotation abstracts away the underlying message broker. When Flamme sees a message published on`message-published-a`, it triggers the following flow:
+
+1. It invokes `execute()` on every consumer of that subject each on its own virtual thread.
+
+2. Each component's return value is published on that component's own produces subject (`message-published-b` and `message-published-c`, respectively).
+
+3. If other components consume those output subjects, the process repeats, cascading through the topology.
+
+We will discuss edge cases, the starting point of the flow, and the leaf nodes, in later sections.
+
+You can then build your jar with:
+
+```bash
+mvn clean package
+```
+
+Then run it immediately with:
+
+```bash
+java -jar ./target/quarkus-run.jar
+```
+
+Flamme uses a local message broker for communication. All components run in the same process, and objects are passed between components through shared memory. This avoids serialization/deserialization overhead and eliminates network latency.
+
+    <Mermaid
+      value={`flowchart LR
+
+subgraph P[Single JVM process - one jar execution]
+A[Component A\nproducer] -->|publish| Q[[Local Message Broker]]
+Q -->|deliver| B[Component B\nconsumer]
+Q -->|deliver| C[Component C\nconsumer]
+end
+
+classDef process fill:None,stroke:#0060de,stroke-width:2px,color:#0060de;
+classDef broker fill:None,stroke:#0060de,stroke-width:2px,color:#0060de;
+class P process;
+class Q broker;`}
+/>
+
+Flamme also gives you the possibility to run the components as microservice, so each in the same process/pod/machine without touching the compiled artifact.
+
+```bash
+# First Node hosts components A so component B and C are set to remote
+java -jar -Dflamme.services.component-b.remote=true -Dflamme.services.component-c.remote=true ./target/quarkus-run.jar
+
+# Second Node hosts component B so component A and C are set to remote
+java -jar -Dflamme.services.component-a.remote=true -Dflamme.services.component-c.remote=true ./target/quarkus-run.jar
+
+# Same for Component C
+java -jar -Dflamme.services.component-b.remote=true -Dflamme.services.component-a.remote=true ./target/quarkus-run.jar
+```
+
+You run the same jar on every node, no recompilation, no code changes. What changes under the hood is the transport: when a producer and its consumers are local to the same process, Flamme routes messages through shared memory as described above. When a component is marked remote, Flamme instead routes the message through [NATS](https://nats.io/), meaning it gets serialized, sent over the network, and deserialized on the receiving node. From the component's perspective nothing changes, only the routing and serialization behavior underneath does.
+
+    <Mermaid
+      value={`flowchart LR
+
+subgraph P1[Process Pod 1]
+A[Component A\nproducer]
+end
+
+subgraph P2[Process Pod 2]
+B[Component B\nconsumer]
+end
+
+subgraph P3[Process Pod 3]
+C[Component C\nconsumer]
+end
+
+N[(NATS broker)]
+A -->|publish| N
+N -->|deliver| B
+N -->|deliver| C
+
+classDef process fill:None,stroke:#0060de,stroke-width:2px,color:#0060de;
+classDef broker fill:None,stroke:#0060de,stroke-width:2px,color:#0060de;
+class P1,P2,P3 process;
+class N broker;`}
+/>
+
+## Edge Cases
+
+So far, we've only talked about regular components. In the previous section we discussed how the `@Flamme` annotation abstracts a message broker, and how runtime configuration lets you change your deployment topology without touching source code — decoupling your application logic from its deployment strategy and environment.
+
+In this section, we'll tackle special components: components that sit at the beginning and end of your application.
+
+**Gateways**
+
+Gateways are components that trigger a flow. Their `consumes` array is empty, and you don't provide an implementation for them. Flamme generates one for you. You inject the Gateway interface and call `execute()` yourself wherever you want to trigger the flow, typically when an HTTP request comes in, but the trigger can be anything: a scheduled job, a CLI command, a test.
+
+```java
+@Flamme(
+    serviceName = "gateway",
+    consumes = {},
+    produces = {"fan-out-subject"},
+    // multipayload key definiton goes here.
+    mutlipayloadKeys = {}
+)
+public interface Gateway {
+    CompletableFuture<Map<String, Message>> execute(Map<String, Message> arguments, Map<String, String> headers);
+}
+```
+
+Note the return type: `CompletableFuture<Map<String, Message>>`, unlike the plain `Map<String, Message>` used by regular components.
+
+When Flamme detects a gateway, it injects a proxy bean that does the following:
+
+1. Dynamically creates a `replyTo` subject for this invocation.
+2. Subscribes to that `replyTo` subject — regardless of where in the topology the reply ends up coming from — and returns a `CompletableFuture` that completes as soon as a message is received on it.
+3. Publishes the arguments to the gateway's produces subjects (fanning out, as usual), with `replyTo` propagated as a header on the message.
+
+Because `replyTo` is propagated with the message, any component further down the flow can reply directly to the gateway — a component can short-circuit the flow by replying early in case of an error, and leaf components (components with no further consumers) reply with the flow's final result. Either way, it's a message on replyTo that resolves the gateway's CompletableFuture.
+
+> The `replyTo` mechanism is a common request/reply pattern in NATS. If this felt strange to you, you can read more about it [here](https://docs.nats.io/nats-concepts/core-nats/reqreply). In Flamme, the same `replyTo` subject is propagated through the flow so downstream components can reply directly to the gateway.
+
+    <Mermaid
+      value={`flowchart LR
+    G[Gateway proxy]
+    Q[[fan-out-subject]]
+    R[[replyTo]]
+    A[Component A]
+    L[Leaf Component]
+    subgraph RF[Remaining Flow]
+    end
+
+G -->|publish| Q
+Q -->|deliver| A
+Q -->|deliver| L
+L -->|publish| R
+R --> |deliver| G
+A -->|publish| RF
+
+classDef process fill:None,stroke:#0060de,stroke-width:2px,color:#0060de;
+classDef broker fill:None,stroke:#0060de,stroke-width:2px,color:#0060de;
+classDef remaining fill:None,stroke:#0060de,stroke-width:2px,stroke-dasharray: 5 5,color:#0060de;
+class P process;
+class Q,R broker;
+class RF remaining;
+class G,A,L node;`}
+/>
+
+:::important[Important Note]
+As mentioned before, the philosophy of Flamme is that you never write transport code but only your components and their implementations, declared declaratively via @Flamme. This holds for error handling too.
+When we said earlier that a component can short-circuit the flow and reply to the gateway, this isn't something the developer implements. If an error is thrown inside a component's implementation, Flamme catches it and automatically routes the error back to the gateway on replyTo. The developer doesn't write any code to make this happen; they just throw, and the rest is handled by the framework.
+:::
+
+Since the proxy returns a plain `CompletableFuture<Map<String, Message>>`, you're not limited to returning the raw map as-is. You can register callbacks on it, such as `thenApply`, `thenCompose`, `thenAccept`, and so on, to transform the flow's result into whatever shape your endpoint actually needs to return.
+For example, extracting a single field from the result map and wrapping it in a proper response DTO:
+
+```java
+@Path("/publish")
+public class PublishResource {
+
+    @Inject
+    Gateway gateway;
+
+    @POST
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public CompletableFuture<PublishResponse> publish(Map<String, Message> arguments) {
+        return gateway.execute(arguments)
+            .thenApply(result -> {
+                Message status = result.get("status");
+                return new PublishResponse(status.getContent());
+            });
+    }
+}
+```
+
+Since `CompletableFuture` composes normally, this works the same way any other async Java code would. You can chain further transformations, handle errors with exceptionally or handle, or combine the result with other async calls before returning it to the client.
+
+**Leaf Nodes**
+
+You've probably already guessed what leaf nodes are for: putting an end to a flow. In contrast to gateways, leaf nodes are components with an empty `produces` array, so instead of publishing their result onward, Flamme automatically routes it to the flow's `replyTo` subject.
+
+If a flow has multiple leaf nodes, whichever one replies first wins: since the gateway's `CompletableFuture` completes on the first message received on `replyTo`, that message resolves the future, and any later replies from other leaf nodes are simply ignored. first wins.

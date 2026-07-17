@@ -1,0 +1,102 @@
+@import "@fontsource/geist/index.css";
+@import "@fontsource/geist-mono/index.css";
+
+:root {
+    /* Typography */
+    --ifm-font-family-base: "Geist", sans-serif;
+    --ifm-heading-font-family: "Geist", sans-serif;
+    --ifm-font-family-monospace: "Geist Mono", monospace;
+
+    /* macOS Classic Light */
+    --ifm-color-primary: #0060de;
+    --ifm-color-primary-dark: #0056c7;
+    --ifm-color-primary-darker: #0052bc;
+    --ifm-color-primary-darkest: #00439b;
+    --ifm-color-primary-light: #1a70e2;
+    --ifm-color-primary-lighter: #2d7be4;
+    --ifm-color-primary-lightest: #5a98ea;
+
+    --ifm-background-color: #f9f9f9;
+    --ifm-background-surface-color: #efefef;
+    --ifm-navbar-background-color: #fefefe;
+
+    --ifm-font-color-base: #000000;
+    --ifm-font-color-secondary: #707070;
+    --ifm-heading-color: #000000;
+
+    --ifm-link-color: #0060de;
+    --ifm-link-hover-color: #0060de;
+
+    --ifm-menu-color: #606060;
+    --ifm-menu-color-active: #000000;
+    --ifm-menu-color-background-active: #0060de15;
+
+    --ifm-toc-border-color: #d2d2d2;
+    --ifm-hr-background-color: #d2d2d2;
+    --ifm-table-border-color: #d2d2d2;
+
+    --ifm-code-color: #036a07;
+    --ifm-pre-background: #f5f5f5;
+    --docusaurus-highlighted-code-line-bg: #f0f0f0;
+}
+
+[data-theme="dark"] {
+    /* Typography */
+    --ifm-font-family-base: "Geist", sans-serif;
+    --ifm-heading-font-family: "Geist", sans-serif;
+    --ifm-font-family-monospace: "Geist Mono", monospace;
+
+    /* macOS Classic Dark */
+    --ifm-color-primary: #077cfd;
+    --ifm-color-primary-dark: #006fe8;
+    --ifm-color-primary-darker: #0069db;
+    --ifm-color-primary-darkest: #0057b4;
+    --ifm-color-primary-light: #248dfd;
+    --ifm-color-primary-lighter: #3797fd;
+    --ifm-color-primary-lightest: #64adfe;
+
+    --ifm-background-color: #131313;
+    --ifm-background-surface-color: #232323;
+    --ifm-navbar-background-color: #1c1c1e;
+
+    --ifm-font-color-base: #dedede;
+    --ifm-font-color-secondary: #9d9d9d;
+    --ifm-heading-color: #caccca;
+
+    --ifm-link-color: #419cff;
+    --ifm-link-hover-color: #419cff;
+
+    --ifm-menu-color: #8f8f8f;
+    --ifm-menu-color-active: #dedede;
+    --ifm-menu-color-background-active: #0059d115;
+
+    --ifm-toc-border-color: #303030;
+    --ifm-hr-background-color: #303030;
+    --ifm-table-border-color: #303030;
+
+    --ifm-code-color: #62ba46;
+    --ifm-pre-background: #1c1c1e;
+    --docusaurus-highlighted-code-line-bg: #35343666;
+}
+
+html,
+body {
+    font-family: var(--ifm-font-family-base);
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+    font-family: var(--ifm-heading-font-family);
+}
+
+/* Docs + Blog pages in monospace */
+.docs-wrapper,
+.docs-wrapper *,
+.blog-wrapper,
+.blog-wrapper * {
+    font-family: var(--ifm-font-family-monospace);
+}

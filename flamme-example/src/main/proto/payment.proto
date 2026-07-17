@@ -1,0 +1,9 @@
+syntax = "proto3";
+
+package com.amadeus.payment;
+
+option java_outer_classname = "PaymentProtos";
+
+message Payment {
+  string payment_method = 1;
+}
