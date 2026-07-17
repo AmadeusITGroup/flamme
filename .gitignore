@@ -1,0 +1,50 @@
+# Build output
+target/
+dist/
+
+# IDE - Eclipse
+.settings/
+.project
+.classpath
+.factorypath
+
+# IDE - IntelliJ
+.idea/
+*.iml
+
+# IDE - VSCode
+.vscode/
+
+# Editor swap files
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Maven
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+dependency-reduced-pom.xml
+
+# Quarkus
+.quarkus/
+
+# Environment
+.env
+.env.local
+*.env
+
+# Test output
+test-output/
+surefire-reports/
+failsafe-reports/

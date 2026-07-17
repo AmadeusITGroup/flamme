@@ -1,0 +1,58 @@
+/**
+ * CSS files with the .module.css suffix will be treated as CSS modules
+ * and scoped locally.
+ */
+
+.container {
+  padding: 2rem;
+  display: flex;
+  flex-direction: row;
+}
+
+.vertical-container {
+  padding: 2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+h1 {
+  font-size: 24px;
+  font-weight: lighter;
+}
+
+h2 {
+  font-size: 18px;
+  font-weight: lighter;
+  font-family: var(--ifm-font-family-mono);
+}
+
+.italic {
+  font-style: italic !important;
+}
+
+.mono {
+  font-family: var(--ifm-font-family-mono);
+}
+
+.hoverable {
+  cursor: pointer;
+}
+
+.ctaLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.75rem;
+  text-decoration: none;
+}
+
+.ctaLink:hover {
+  text-decoration: underline;
+}
+
+@media screen and (max-width: 996px) {
+  .heroBanner {
+    padding: 2rem;
+  }
+}
