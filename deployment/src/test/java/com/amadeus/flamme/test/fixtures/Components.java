@@ -45,12 +45,12 @@ public class Components {
     @Inject ToUpperProbe probe;
 
     public Map<String, Message> toUpper(Map<String, Message> input) {
-      probe.called.countDown();
       probe.lastInput.set(input);
       StringValue stringValue = (StringValue) input.get("VALUE");
       Map<String, Message> result = new HashMap<>();
       result.put("VALUE", StringValue.of(stringValue.getValue().toUpperCase()));
       probe.lastOutput.set(result);
+      probe.called.countDown();
       return result;
     }
   }
