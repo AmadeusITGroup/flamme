@@ -81,8 +81,8 @@ The example exposes a REST endpoint. Send an order:
 
 ```bash
 curl -X POST http://localhost:8080/order \
-  -H "Content-Type: application/json" \
-  -d '{"id": "order-1", "amount": 100}'
+  -H 'Content-Type: application/json' \
+  -d '{"customerEmail": "test@example.com", "totalAmount": 100, "orderItems": [{"sku": "SKU-123", "quantity": 2}], "payment": {"paymentMethod": "credit_card"}}'
 ```
 
 ### How it works
@@ -110,4 +110,3 @@ public interface ChargePayment {
     Map<String, Message> chargePayment(Map<String, Message> args);
 }
 ```
-

@@ -21,7 +21,7 @@ mvn clean install
 Add the dependency to the `pom.xml` of your quarkus application:
 ```xml
 <dependency>
-    <groupId>com.amadeus</groupId>
+    <groupId>io.github.amadeusitgroup</groupId>
     <artifactId>flamme</artifactId>
     <version>1.0.0-SNAPSHOT</version>
 </dependency>
