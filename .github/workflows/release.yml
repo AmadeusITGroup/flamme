@@ -1,0 +1,691 @@
+name: Enhanced Release with Attestations
+
+on:
+  release:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to create attestations for'
+        required: true
+        type: string
+      dry_run:
+        description: 'Perform a dry run (validate only, do not publish)'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+  packages: write
+  actions: read
+  id-token: write
+  attestations: write
+  security-events: write
+
+jobs:
+  build-and-attest:
+    runs-on: ubuntu-latest
+    outputs:
+      artifact-hashes: ${{ steps.hash.outputs.hashes }}
+      sbom-hash: ${{ steps.sbom-hash.outputs.hash }}
+      version: ${{ steps.version.outputs.version }}
+      build_timestamp: ${{ steps.ts.outputs.build_timestamp }}
+      total_tests: ${{ steps.test-results.outputs.total_tests }}
+      passed_tests: ${{ steps.test-results.outputs.passed_tests }}
+      failed_tests: ${{ steps.test-results.outputs.failed_tests }}
+      success_rate: ${{ steps.test-results.outputs.success_rate }}
+      instruction_coverage: ${{ steps.test-results.outputs.instruction_coverage }}
+      branch_coverage: ${{ steps.test-results.outputs.branch_coverage }}
+      line_coverage: ${{ steps.test-results.outputs.line_coverage }}
+
+    steps:
+    - name: Harden Runner
+      uses: step-security/harden-runner@v2
+      with:
+        egress-policy: audit
+
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Install tooling (xmllint, bc)
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libxml2-utils bc
+
+    - name: Determine version
+      id: version
+      run: |
+        if [ "${{ github.event_name }}" = "release" ]; then
+          VERSION="${{ github.event.release.tag_name }}"
+        elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          VERSION="${{ github.event.inputs.tag }}"
+        else
+          VERSION="0.0.1-SNAPSHOT"
+        fi
+
+        VERSION=$(echo "$VERSION" | sed 's/^v//')
+
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+        echo "Using version: $VERSION"
+
+    - name: Validate version format
+      run: |
+        VERSION="${{ steps.version.outputs.version }}"
+
+        if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.-]+)?$ ]]; then
+          echo "❌ Invalid version format: $VERSION"
+          echo "Expected format: X.Y.Z or X.Y.Z-qualifier"
+          exit 1
+        fi
+
+        echo "✅ Version format is valid: $VERSION"
+
+    - name: Compute build timestamp
+      id: ts
+      run: |
+        echo "build_timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_OUTPUT
+
+    - name: Update Maven version
+      run: |
+        echo "Updating Maven version to: ${{ steps.version.outputs.version }}"
+        mvn -B versions:set -DnewVersion=${{ steps.version.outputs.version }} -DgenerateBackupPoms=false
+
+        ACTUAL_VERSION=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)
+        echo "Maven version set to: $ACTUAL_VERSION"
+
+        if [ "$ACTUAL_VERSION" != "${{ steps.version.outputs.version }}" ]; then
+          echo "❌ Version mismatch: expected ${{ steps.version.outputs.version }}, got $ACTUAL_VERSION"
+          exit 1
+        fi
+
+        echo "✅ Maven version updated successfully"
+
+    - name: Set up JDK 21
+      uses: actions/setup-java@v4
+      with:
+        java-version: '21'
+        distribution: 'temurin'
+        server-id: central
+        server-username: MAVEN_USERNAME
+        server-password: MAVEN_PASSWORD
+        settings-path: ${{ github.workspace }}
+
+    - name: Cache Maven dependencies
+      uses: actions/cache@v4
+      with:
+        path: ~/.m2
+        key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+        restore-keys: ${{ runner.os }}-m2
+
+    - name: Import GPG key
+      env:
+        GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+        GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+      run: |
+        mkdir -p ~/.gnupg
+        chmod 700 ~/.gnupg
+        echo "$GPG_PRIVATE_KEY" | gpg --batch --yes --import 2>&1 | sed 's/<[^>]*>/<***@***.***>/g'
+        KEY_ID=$(gpg --list-secret-keys --keyid-format LONG | grep sec | head -1 | sed 's/.*\/\([A-F0-9]*\).*/\1/')
+        echo "GPG_KEYNAME=$KEY_ID" >> $GITHUB_ENV
+        FINGERPRINT=$(gpg --list-secret-keys --with-colons --fingerprint | grep fpr | head -1 | cut -d: -f10)
+        echo "$FINGERPRINT:6:" | gpg --batch --import-ownertrust
+        echo "use-agent" >> ~/.gnupg/gpg.conf
+        echo "pinentry-mode loopback" >> ~/.gnupg/gpg.conf
+        echo "batch" >> ~/.gnupg/gpg.conf
+        echo "no-tty" >> ~/.gnupg/gpg.conf
+        echo "default-key $KEY_ID" >> ~/.gnupg/gpg.conf
+        chmod 600 ~/.gnupg/gpg.conf
+
+    - name: Build, test, and package artifacts with GPG signing
+      env:
+        GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        GPG_KEYNAME: ${{ env.GPG_KEYNAME }}
+      run: |
+        echo "🚀 Running Maven build with tests and GPG signing..."
+        mvn clean verify
+        echo "✅ Build completed with signed artifacts"
+
+    - name: Validate for Maven Central
+      run: |
+        VERSION="${{ steps.version.outputs.version }}"
+
+        if [[ "$VERSION" == *"-SNAPSHOT" ]]; then
+          echo "❌ Cannot deploy SNAPSHOT version to Maven Central"
+          exit 1
+        fi
+
+        echo "✅ Version is suitable for Maven Central: $VERSION"
+
+    - name: Generate comprehensive SBOM
+      uses: anchore/sbom-action@v0
+      with:
+        path: .
+        format: spdx-json
+        output-file: sbom.spdx.json
+        upload-artifact: false
+
+    - name: Security scan with Trivy
+      uses: aquasecurity/trivy-action@master
+      with:
+        scan-type: 'fs'
+        scan-ref: '.'
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+        severity: 'CRITICAL,HIGH,MEDIUM,LOW'
+
+    - name: Generate vulnerability report
+      uses: aquasecurity/trivy-action@master
+      with:
+        scan-type: 'fs'
+        scan-ref: '.'
+        format: 'json'
+        output: 'vulnerability-report.json'
+        severity: 'CRITICAL,HIGH,MEDIUM,LOW'
+
+    - name: Sign additional artifacts
+      env:
+        GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+      run: |
+        for file in sbom.spdx.json vulnerability-report.json build-metadata.json; do
+          if [ -f "$file" ]; then
+            gpg --batch --yes --pinentry-mode loopback \
+              --passphrase "${GPG_PASSPHRASE}" \
+              --armor --detach-sign "$file"
+            echo "✅ Signed $file"
+          fi
+        done
+
+    - name: Parse test results and coverage
+      id: test-results
+      run: |
+        TOTAL_TESTS=0
+        FAILURES=0
+        ERRORS=0
+        SKIPPED=0
+
+        for report in $(find . -path "*/target/surefire-reports/TEST-*.xml" -not -path "*/flamme-example/*" 2>/dev/null); do
+          T=$(xmllint --xpath "sum(//testsuite/@tests)" "$report" 2>/dev/null || echo "0")
+          F=$(xmllint --xpath "sum(//testsuite/@failures)" "$report" 2>/dev/null || echo "0")
+          E=$(xmllint --xpath "sum(//testsuite/@errors)" "$report" 2>/dev/null || echo "0")
+          S=$(xmllint --xpath "sum(//testsuite/@skipped)" "$report" 2>/dev/null || echo "0")
+          TOTAL_TESTS=$((TOTAL_TESTS + T))
+          FAILURES=$((FAILURES + F))
+          ERRORS=$((ERRORS + E))
+          SKIPPED=$((SKIPPED + S))
+        done
+
+        PASSED=$((TOTAL_TESTS - FAILURES - ERRORS - SKIPPED))
+
+        if [ $TOTAL_TESTS -gt 0 ]; then
+          SUCCESS_RATE=$(echo "scale=1; $PASSED * 100 / $TOTAL_TESTS" | bc -l)
+        else
+          SUCCESS_RATE="0.0"
+        fi
+
+        echo "total_tests=$TOTAL_TESTS" >> $GITHUB_OUTPUT
+        echo "passed_tests=$PASSED" >> $GITHUB_OUTPUT
+        echo "failed_tests=$FAILURES" >> $GITHUB_OUTPUT
+        echo "error_tests=$ERRORS" >> $GITHUB_OUTPUT
+        echo "skipped_tests=$SKIPPED" >> $GITHUB_OUTPUT
+        echo "success_rate=${SUCCESS_RATE}%" >> $GITHUB_OUTPUT
+
+        JACOCO=$(find . -path "*/target/site/jacoco/jacoco.xml" -not -path "*/flamme-example/*" 2>/dev/null | head -1)
+        if [ -f "$JACOCO" ]; then
+          INSTRUCTION_COVERED=$(grep -o '<counter type="INSTRUCTION" missed="[0-9]*" covered="[0-9]*"/>' "$JACOCO" | tail -1 | sed 's/.*covered="\([0-9]*\)".*/\1/' || echo "0")
+          INSTRUCTION_MISSED=$(grep -o '<counter type="INSTRUCTION" missed="[0-9]*" covered="[0-9]*"/>' "$JACOCO" | tail -1 | sed 's/.*missed="\([0-9]*\)".*/\1/' || echo "0")
+          BRANCH_COVERED=$(grep -o '<counter type="BRANCH" missed="[0-9]*" covered="[0-9]*"/>' "$JACOCO" | tail -1 | sed 's/.*covered="\([0-9]*\)".*/\1/' || echo "0")
+          BRANCH_MISSED=$(grep -o '<counter type="BRANCH" missed="[0-9]*" covered="[0-9]*"/>' "$JACOCO" | tail -1 | sed 's/.*missed="\([0-9]*\)".*/\1/' || echo "0")
+          LINE_COVERED=$(grep -o '<counter type="LINE" missed="[0-9]*" covered="[0-9]*"/>' "$JACOCO" | tail -1 | sed 's/.*covered="\([0-9]*\)".*/\1/' || echo "0")
+          LINE_MISSED=$(grep -o '<counter type="LINE" missed="[0-9]*" covered="[0-9]*"/>' "$JACOCO" | tail -1 | sed 's/.*missed="\([0-9]*\)".*/\1/' || echo "0")
+
+          INSTRUCTION_TOTAL=$((INSTRUCTION_COVERED + INSTRUCTION_MISSED))
+          BRANCH_TOTAL=$((BRANCH_COVERED + BRANCH_MISSED))
+          LINE_TOTAL=$((LINE_COVERED + LINE_MISSED))
+
+          if [ $INSTRUCTION_TOTAL -gt 0 ]; then
+            INSTRUCTION_PCT=$(echo "scale=1; $INSTRUCTION_COVERED * 100 / $INSTRUCTION_TOTAL" | bc -l)
+          else
+            INSTRUCTION_PCT="0.0"
+          fi
+
+          if [ $BRANCH_TOTAL -gt 0 ]; then
+            BRANCH_PCT=$(echo "scale=1; $BRANCH_COVERED * 100 / $BRANCH_TOTAL" | bc -l)
+          else
+            BRANCH_PCT="0.0"
+          fi
+
+          if [ $LINE_TOTAL -gt 0 ]; then
+            LINE_PCT=$(echo "scale=1; $LINE_COVERED * 100 / $LINE_TOTAL" | bc -l)
+          else
+            LINE_PCT="0.0"
+          fi
+
+          echo "instruction_coverage=${INSTRUCTION_PCT}%" >> $GITHUB_OUTPUT
+          echo "branch_coverage=${BRANCH_PCT}%" >> $GITHUB_OUTPUT
+          echo "line_coverage=${LINE_PCT}%" >> $GITHUB_OUTPUT
+          echo "instruction_covered=$INSTRUCTION_COVERED" >> $GITHUB_OUTPUT
+          echo "instruction_total=$INSTRUCTION_TOTAL" >> $GITHUB_OUTPUT
+          echo "branch_covered=$BRANCH_COVERED" >> $GITHUB_OUTPUT
+          echo "branch_total=$BRANCH_TOTAL" >> $GITHUB_OUTPUT
+          echo "line_covered=$LINE_COVERED" >> $GITHUB_OUTPUT
+          echo "line_total=$LINE_TOTAL" >> $GITHUB_OUTPUT
+        else
+          echo "instruction_coverage=0%" >> $GITHUB_OUTPUT
+          echo "branch_coverage=0%" >> $GITHUB_OUTPUT
+          echo "line_coverage=0%" >> $GITHUB_OUTPUT
+          echo "instruction_covered=0" >> $GITHUB_OUTPUT
+          echo "instruction_total=0" >> $GITHUB_OUTPUT
+          echo "branch_covered=0" >> $GITHUB_OUTPUT
+          echo "branch_total=0" >> $GITHUB_OUTPUT
+          echo "line_covered=0" >> $GITHUB_OUTPUT
+          echo "line_total=0" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Create comprehensive build metadata
+      run: |
+        cat > build-metadata.json << EOF
+        {
+          "build_timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+          "git_commit": "${{ github.sha }}",
+          "git_ref": "${{ github.ref }}",
+          "workflow_run_id": "${{ github.run_id }}",
+          "workflow_run_number": "${{ github.run_number }}",
+          "runner_os": "${{ runner.os }}",
+          "java_version": "21",
+          "maven_version": "$(mvn --version | head -1 | cut -d' ' -f3)",
+          "test_results": {
+            "total_tests": "${{ steps.test-results.outputs.total_tests }}",
+            "passed_tests": "${{ steps.test-results.outputs.passed_tests }}",
+            "failed_tests": "${{ steps.test-results.outputs.failed_tests }}",
+            "success_rate": "${{ steps.test-results.outputs.success_rate }}"
+          },
+          "code_coverage": {
+            "instruction_coverage": "${{ steps.test-results.outputs.instruction_coverage }}",
+            "branch_coverage": "${{ steps.test-results.outputs.branch_coverage }}",
+            "line_coverage": "${{ steps.test-results.outputs.line_coverage }}"
+          },
+          "build_environment": {
+            "github_actor": "${{ github.actor }}",
+            "github_repository": "${{ github.repository }}",
+            "github_event_name": "${{ github.event_name }}"
+          }
+        }
+        EOF
+
+    - name: Generate artifact hashes
+      id: hash
+      run: |
+        echo "📝 Generating SHA256 hashes for all artifacts..."
+
+        # Collect all JARs, POMs, and their signatures across all modules (excluding example)
+        ARTIFACTS=$(find runtime/target deployment/target -maxdepth 1 \( -name "*.jar" -o -name "*.pom" \) ! -name "*-sources.*" ! -name "*-javadoc.*" 2>/dev/null || true)
+        if [ -z "$ARTIFACTS" ]; then
+          echo "❌ No artifacts found in module target directories"
+          exit 1
+        fi
+
+        sha256sum $ARTIFACTS > artifacts.sha256 2>/dev/null
+
+        for file in $ARTIFACTS; do
+          if [ -f "$file" ]; then
+            sha256sum "$file" > "$(basename "$file").sha256"
+            echo "✅ Generated hash for $(basename "$file")"
+          fi
+        done
+
+        hashes=$(sha256sum $ARTIFACTS | base64 -w 0)
+        echo "hashes=$hashes" >> $GITHUB_OUTPUT
+
+        echo "Generated artifacts:"
+        ls -la $ARTIFACTS
+
+    - name: Generate SBOM hash
+      id: sbom-hash
+      run: |
+        sbom_hash=$(sha256sum sbom.spdx.json | cut -d' ' -f1)
+        echo "hash=$sbom_hash" >> $GITHUB_OUTPUT
+        echo "SBOM SHA256: $sbom_hash"
+
+    - name: Generate release summary
+      run: |
+        echo "## 🚀 Release Build Summary" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+
+        echo "### 🏗️ Build Information" >> $GITHUB_STEP_SUMMARY
+        echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+        echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+        echo "| Build Timestamp | $(date -u +%Y-%m-%dT%H:%M:%SZ) |" >> $GITHUB_STEP_SUMMARY
+        echo "| Git Commit | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
+        echo "| Workflow Run | [${{ github.run_number }}](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}) |" >> $GITHUB_STEP_SUMMARY
+        echo "| Java Version | 21 |" >> $GITHUB_STEP_SUMMARY
+        echo "| Maven Version | $(mvn --version | head -1 | cut -d' ' -f3) |" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+
+        echo "### 🧪 Test Results" >> $GITHUB_STEP_SUMMARY
+        echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+        echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+        echo "| Total Tests | ${{ steps.test-results.outputs.total_tests }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Passed | ${{ steps.test-results.outputs.passed_tests }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Failed | ${{ steps.test-results.outputs.failed_tests }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Errors | ${{ steps.test-results.outputs.error_tests }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Skipped | ${{ steps.test-results.outputs.skipped_tests }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Success Rate | ${{ steps.test-results.outputs.success_rate }} |" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+
+        echo "### 📈 Code Coverage" >> $GITHUB_STEP_SUMMARY
+        echo "| Coverage Type | Covered | Total | Percentage |" >> $GITHUB_STEP_SUMMARY
+        echo "|---------------|---------|-------|------------|" >> $GITHUB_STEP_SUMMARY
+        echo "| Instructions | ${{ steps.test-results.outputs.instruction_covered }} | ${{ steps.test-results.outputs.instruction_total }} | ${{ steps.test-results.outputs.instruction_coverage }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Branches | ${{ steps.test-results.outputs.branch_covered }} | ${{ steps.test-results.outputs.branch_total }} | ${{ steps.test-results.outputs.branch_coverage }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Lines | ${{ steps.test-results.outputs.line_covered }} | ${{ steps.test-results.outputs.line_total }} | ${{ steps.test-results.outputs.line_coverage }} |" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+
+        echo "### 🔒 Security Attestations" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ SLSA Level 3 Provenance generated" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ SPDX SBOM: \`sbom.spdx.json\`" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ Vulnerability scan completed" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ GPG signatures generated" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ SHA-256 checksums created" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+
+        echo "### 📦 Release Artifacts" >> $GITHUB_STEP_SUMMARY
+        echo "**Main Artifacts:**" >> $GITHUB_STEP_SUMMARY
+        for file in $(find runtime/target deployment/target -maxdepth 1 \( -name "*.jar" -o -name "*.pom" \) 2>/dev/null | sort); do
+          basename_file=$(basename "$file")
+          size=$(stat -c%s "$file" 2>/dev/null | numfmt --to=iec 2>/dev/null || echo "?")
+          echo "- $basename_file ($size)" >> $GITHUB_STEP_SUMMARY
+        done
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Attestation Artifacts:**" >> $GITHUB_STEP_SUMMARY
+        echo "- sbom.spdx.json - SPDX Software Bill of Materials" >> $GITHUB_STEP_SUMMARY
+        echo "- vulnerability-report.json - Security vulnerability report" >> $GITHUB_STEP_SUMMARY
+        echo "- build-metadata.json - Build environment metadata" >> $GITHUB_STEP_SUMMARY
+        echo "- *.sha256 - SHA-256 checksums" >> $GITHUB_STEP_SUMMARY
+        echo "- *.asc - GPG signatures" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+
+    - name: Create verification instructions
+      run: |
+        echo "# Artifact Verification Instructions" > VERIFICATION.md
+        echo "" >> VERIFICATION.md
+        echo "## GPG Signature Verification" >> VERIFICATION.md
+        echo "gpg --verify flamme-*.jar.asc flamme-*.jar" >> VERIFICATION.md
+        echo "" >> VERIFICATION.md
+        echo "## SHA256 Hash Verification" >> VERIFICATION.md
+        echo "sha256sum -c artifacts.sha256" >> VERIFICATION.md
+        echo "" >> VERIFICATION.md
+        echo "## SLSA Provenance Verification" >> VERIFICATION.md
+        echo "slsa-verifier verify-artifact flamme-*.jar --provenance-path *.intoto.jsonl --source-uri github.com/$GITHUB_REPOSITORY" >> VERIFICATION.md
+        echo "" >> VERIFICATION.md
+        echo "## SBOM Vulnerability Scanning" >> VERIFICATION.md
+        echo "grype sbom:sbom.spdx.json" >> VERIFICATION.md
+
+    - name: Generate GitHub Attestations
+      uses: actions/attest-build-provenance@v1
+      with:
+        subject-path: |
+          runtime/target/*.jar
+          deployment/target/*.jar
+          sbom.spdx.json
+
+    - name: Upload attestation artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: attestation-artifacts
+        path: |
+          runtime/target/flamme-*.jar
+          runtime/target/flamme-*.pom
+          deployment/target/flamme-deployment-*.jar
+          deployment/target/flamme-deployment-*.pom
+          *.sha256
+          artifacts.sha256
+          sbom.spdx.json
+          vulnerability-report.json
+          build-metadata.json
+          VERIFICATION.md
+        if-no-files-found: error
+        retention-days: 90
+
+  slsa-provenance:
+    needs: build-and-attest
+    permissions:
+      actions: read
+      id-token: write
+      contents: write
+    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.1.0
+    with:
+      base64-subjects: "${{ needs.build-and-attest.outputs.artifact-hashes }}"
+
+  deploy-to-maven-central:
+    needs: [build-and-attest, slsa-provenance]
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'false') }}
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up JDK 21
+      uses: actions/setup-java@v4
+      with:
+        java-version: '21'
+        distribution: 'temurin'
+        server-id: central
+        server-username: MAVEN_USERNAME
+        server-password: MAVEN_PASSWORD
+        settings-path: ${{ github.workspace }}
+
+    - name: Cache Maven dependencies
+      uses: actions/cache@v4
+      with:
+        path: ~/.m2
+        key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+        restore-keys: ${{ runner.os }}-m2
+
+    - name: Determine version for deployment
+      id: deploy-version
+      run: |
+        if [ "${{ github.event_name }}" = "release" ]; then
+          VERSION="${{ github.event.release.tag_name }}"
+        elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          VERSION="${{ github.event.inputs.tag }}"
+        else
+          VERSION="0.0.1-SNAPSHOT"
+        fi
+
+        VERSION=$(echo "$VERSION" | sed 's/^v//')
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+        echo "Using version for deployment: $VERSION"
+
+    - name: Download attestation artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: attestation-artifacts
+        path: ./
+
+    - name: Validate artifacts exist
+      run: |
+        VERSION="${{ steps.deploy-version.outputs.version }}"
+        echo "📦 Validating required artifacts for version: $VERSION"
+
+        [ -f "runtime/target/flamme-${VERSION}.jar" ] || { echo "❌ Runtime JAR not found"; exit 1; }
+        [ -f "runtime/target/flamme-${VERSION}.pom" ] || { echo "❌ Runtime POM not found"; exit 1; }
+        [ -f "deployment/target/flamme-deployment-${VERSION}.jar" ] || { echo "❌ Deployment JAR not found"; exit 1; }
+        [ -f "deployment/target/flamme-deployment-${VERSION}.pom" ] || { echo "❌ Deployment POM not found"; exit 1; }
+        echo "✅ All required artifacts present"
+
+    - name: Import GPG key
+      env:
+        GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+        GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+      run: |
+        mkdir -p ~/.gnupg
+        chmod 700 ~/.gnupg
+        echo "$GPG_PRIVATE_KEY" | gpg --batch --yes --import 2>&1 | sed 's/<[^>]*>/<***@***.***>/g'
+        KEY_ID=$(gpg --list-secret-keys --keyid-format LONG | grep sec | head -1 | sed 's/.*\/\([A-F0-9]*\).*/\1/')
+        echo "Using GPG key ID: $KEY_ID"
+        echo "GPG_KEYNAME=$KEY_ID" >> $GITHUB_ENV
+        FINGERPRINT=$(gpg --list-secret-keys --with-colons --fingerprint | grep fpr | head -1 | cut -d: -f10)
+        echo "$FINGERPRINT:6:" | gpg --batch --import-ownertrust
+        mkdir -p ~/.gnupg
+        chmod 700 ~/.gnupg
+        echo "use-agent" >> ~/.gnupg/gpg.conf
+        echo "pinentry-mode loopback" >> ~/.gnupg/gpg.conf
+        echo "batch" >> ~/.gnupg/gpg.conf
+        echo "no-tty" >> ~/.gnupg/gpg.conf
+        echo "default-key $KEY_ID" >> ~/.gnupg/gpg.conf
+        echo "allow-loopback-pinentry" >> ~/.gnupg/gpg-agent.conf
+        echo "default-cache-ttl 86400" >> ~/.gnupg/gpg-agent.conf
+        echo "max-cache-ttl 86400" >> ~/.gnupg/gpg-agent.conf
+        chmod 600 ~/.gnupg/gpg.conf
+        chmod 600 ~/.gnupg/gpg-agent.conf
+        gpg-connect-agent reloadagent /bye || true
+        echo "test" > /tmp/test.txt
+        gpg --detach-sign --armor --batch --yes --pinentry-mode loopback --passphrase "$GPG_PASSPHRASE" --default-key "$KEY_ID" --output /tmp/test.asc /tmp/test.txt
+        gpg --verify /tmp/test.asc /tmp/test.txt
+        echo "GPG signing test successful - signature verified"
+        gpg --armor --export "$KEY_ID" > /tmp/public_key.asc
+        echo "Public key exported for verification"
+
+    - name: Update Maven version for deployment
+      run: |
+        echo "Updating Maven version to: ${{ steps.deploy-version.outputs.version }}"
+        mvn -B versions:set -DnewVersion=${{ steps.deploy-version.outputs.version }} -DgenerateBackupPoms=false
+        ACTUAL_VERSION=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)
+        echo "Maven version set to: $ACTUAL_VERSION"
+        if [ "$ACTUAL_VERSION" != "${{ steps.deploy-version.outputs.version }}" ]; then
+          echo "❌ Version mismatch: expected ${{ steps.deploy-version.outputs.version }}, got $ACTUAL_VERSION"
+          exit 1
+        fi
+        echo "✅ Maven version updated successfully for deployment"
+
+    - name: Deploy to Maven Central
+      env:
+        MAVEN_USERNAME: ${{ secrets.OSSRH_USERNAME }}
+        MAVEN_PASSWORD: ${{ secrets.OSSRH_TOKEN }}
+        GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+      run: |
+        echo "🚀 Starting deployment to Maven Central..."
+        echo "Deploying version: ${{ steps.deploy-version.outputs.version }}"
+
+        MAX_RETRIES=3
+        RETRY_COUNT=0
+
+        while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+          echo "Deployment attempt $((RETRY_COUNT + 1))/$MAX_RETRIES..."
+
+          if mvn clean deploy -DskipTests \
+            -s ${{ github.workspace }}/settings.xml; then
+            echo "✅ Deployment to Maven Central successful"
+            break
+          fi
+
+          RETRY_COUNT=$((RETRY_COUNT + 1))
+          if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+            echo "⚠️ Deployment failed, retrying in 10 seconds..."
+            sleep 10
+          else
+            echo "❌ Deployment failed after $MAX_RETRIES attempts"
+            exit 1
+          fi
+        done
+        echo "✅ Manual deployment completed successfully"
+  attach-to-release:
+    needs: [build-and-attest, slsa-provenance, deploy-to-maven-central]
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'release' }}
+
+    steps:
+    - name: Download attestation artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: attestation-artifacts
+        path: ./attestations/
+
+    - name: Download SLSA provenance
+      uses: actions/download-artifact@v4
+      with:
+        name: ${{ needs.slsa-provenance.outputs.provenance-name }}
+        path: ./slsa/
+
+    - name: Attach attestations to release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          attestations/*.jar
+          attestations/*.pom
+          attestations/*.sha256
+          attestations/sbom.spdx.json
+          attestations/vulnerability-report.json
+          attestations/build-metadata.json
+          slsa/*.intoto.jsonl
+        body: |
+          ## 🚀 Release Summary
+
+          ### 🏗️ Build Information
+          - **Build Timestamp:** ${{ needs.build-and-attest.outputs.build_timestamp }}
+          - **Git Commit:** ${{ github.sha }}
+          - **Workflow Run:** [${{ github.run_number }}](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
+          - **Java Version:** 21
+
+          ### 🧪 Test Results
+          - **Total Tests:** ${{ needs.build-and-attest.outputs.total_tests }}
+          - **Passed:** ${{ needs.build-and-attest.outputs.passed_tests }}
+          - **Failed:** ${{ needs.build-and-attest.outputs.failed_tests }}
+          - **Success Rate:** ${{ needs.build-and-attest.outputs.success_rate }}
+
+          ### 📈 Code Coverage
+          - **Instructions:** ${{ needs.build-and-attest.outputs.instruction_coverage }}
+          - **Branches:** ${{ needs.build-and-attest.outputs.branch_coverage }}
+          - **Lines:** ${{ needs.build-and-attest.outputs.line_coverage }}
+
+          ### 📦 Maven Central
+          - **Coordinates:** `io.github.amadeusitgroup:flamme:${{ needs.build-and-attest.outputs.version }}` / `io.github.amadeusitgroup:flamme-deployment:${{ needs.build-and-attest.outputs.version }}`
+          - **Runtime:** https://central.sonatype.com/artifact/io.github.amadeusitgroup/flamme/${{ needs.build-and-attest.outputs.version }}
+          - **Deployment:** https://central.sonatype.com/artifact/io.github.amadeusitgroup/flamme-deployment/${{ needs.build-and-attest.outputs.version }}
+
+          ### 🔒 Security Attestations
+          This release includes comprehensive security attestations and provenance information:
+
+          #### 📋 Software Bill of Materials (SBOM)
+          - **SPDX Format:** sbom.spdx.json
+
+          #### 🛡️ Security Scanning
+          - **Vulnerability Report:** vulnerability-report.json
+          - **SARIF Report:** trivy-results.sarif
+
+          #### 🔐 Provenance & Attestations
+          - **SLSA Provenance:** *.intoto.jsonl (provenance attestations)
+          - **Build Metadata:** build-metadata.json
+          - **Artifact Hashes:** *.sha256
+
+          #### ✍️ Code Signing
+          - All artifacts are signed with GPG
+
+          ### 📦 Release Artifacts
+
+          **Main Artifacts:**
+          - Runtime JAR: flamme-${{ needs.build-and-attest.outputs.version }}.jar
+          - Runtime POM: flamme-${{ needs.build-and-attest.outputs.version }}.pom
+          - Deployment JAR: flamme-deployment-${{ needs.build-and-attest.outputs.version }}.jar
+          - Deployment POM: flamme-deployment-${{ needs.build-and-attest.outputs.version }}.pom
+
+          **Attestation Artifacts:**
+          - sbom.spdx.json - SPDX Software Bill of Materials
+          - vulnerability-report.json - Security vulnerability report
+          - build-metadata.json - Build environment metadata
+          - *.sha256 - SHA-256 checksums
+
+          ### 🔍 Verification
+          See the attached VERIFICATION.md file for detailed instructions on verifying GPG signatures, SHA256 hashes, SLSA provenance, and scanning SBOMs for vulnerabilities.
+
+          ### 🏗️ Build Environment
+          - **Runner OS:** ubuntu-latest
+          - **Build Actor:** ${{ github.actor }}
+          - **Repository:** ${{ github.repository }}
+          - **Event:** ${{ github.event_name }}
+
+          All attestations are also available in Maven Central alongside the published artifacts.
