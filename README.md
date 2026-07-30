@@ -32,7 +32,7 @@ Add the Flamme dependency to your `pom.xml`:
 
 ```xml
 <dependency>
-    <groupId>com.amadeus</groupId>
+    <groupId>io.github.amadeusitgroup</groupId>
     <artifactId>flamme</artifactId>
     <version>1.0.0-SNAPSHOT</version>
 </dependency>

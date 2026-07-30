@@ -26,8 +26,8 @@ function HomepageHeader() {
 
 export default function Home(): ReactNode {
   const { siteConfig } = useDocusaurusContext();
-  const helloWorldExampleCode = `import com.amadeus.flamme.runtime.annotations.Flamme;
-import com.amadeus.flamme.runtime.annotations.FlammeImpl;
+  const helloWorldExampleCode = `import io.github.amadeusitgroup.flamme.runtime.annotations.Flamme;
+import io.github.amadeusitgroup.flamme.runtime.annotations.FlammeImpl;
 import com.google.protobuf.Message;
 import com.google.protobuf.StringValue;
 import jakarta.inject.Inject;
