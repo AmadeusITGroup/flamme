@@ -1,0 +1,228 @@
+name: Continuous Integration Build
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - '.gitignore'
+      - 'LICENSE'
+      - '*.md'
+      - '*.adoc'
+      - '*.txt'
+  pull_request:
+    paths-ignore:
+      - '.gitignore'
+      - 'LICENSE'
+      - '*.md'
+      - '*.adoc'
+      - '*.txt'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        java-version: [ 21 ]
+    name: Build with Java ${{ matrix.java-version }}
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@v2
+        with:
+          egress-policy: audit
+
+      - name: Cache Maven dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            ${{ runner.os }}-maven-
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Java setup
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ matrix.java-version }}
+          distribution: temurin
+
+      - name: Build and Test with Maven
+        env:
+          GH_RELEASE_ASSET_TOKEN: test_token
+        run: |
+          echo "🚀 Running Maven build and tests..."
+          mvn -B clean verify -Dgpg.skip=true
+          echo "✅ Build completed successfully"
+
+      - name: Parse Test Results
+        id: test-results
+        if: always()
+        run: |
+          total_tests=0
+          failed_tests=0
+          error_tests=0
+          skipped_tests=0
+
+          for xml_file in $(find . -path "*/target/surefire-reports/TEST-*.xml" -not -path "*/flamme-example/*" 2>/dev/null); do
+            if [ -f "$xml_file" ]; then
+              tests=$(xmllint --xpath "string(/testsuite/@tests)" "$xml_file" 2>/dev/null || echo "0")
+              failures=$(xmllint --xpath "string(/testsuite/@failures)" "$xml_file" 2>/dev/null || echo "0")
+              errors=$(xmllint --xpath "string(/testsuite/@errors)" "$xml_file" 2>/dev/null || echo "0")
+              skipped=$(xmllint --xpath "string(/testsuite/@skipped)" "$xml_file" 2>/dev/null || echo "0")
+
+              total_tests=$((total_tests + tests))
+              failed_tests=$((failed_tests + failures))
+              error_tests=$((error_tests + errors))
+              skipped_tests=$((skipped_tests + skipped))
+            fi
+          done
+
+          passed_tests=$((total_tests - failed_tests - error_tests - skipped_tests))
+
+          echo "total_tests=$total_tests" >> $GITHUB_OUTPUT
+          echo "passed_tests=$passed_tests" >> $GITHUB_OUTPUT
+          echo "failed_tests=$failed_tests" >> $GITHUB_OUTPUT
+          echo "error_tests=$error_tests" >> $GITHUB_OUTPUT
+          echo "skipped_tests=$skipped_tests" >> $GITHUB_OUTPUT
+
+          if [ $total_tests -gt 0 ]; then
+            success_rate=$(echo "scale=2; $passed_tests * 100 / $total_tests" | bc -l)
+            echo "success_rate=${success_rate}%" >> $GITHUB_OUTPUT
+          else
+            echo "success_rate=0%" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Security Scan with Trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH,MEDIUM'
+
+      - name: Upload Trivy scan results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+      - name: Generate SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          path: .
+          format: spdx-json
+          output-file: sbom.spdx.json
+
+      - name: Upload Test Reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-reports-java-${{ matrix.java-version }}
+          path: |
+            runtime/target/surefire-reports/
+            deployment/target/surefire-reports/
+            deployment/target/site/jacoco/
+            runtime/target/*.jar
+            deployment/target/*.jar
+            sbom.spdx.json
+            trivy-results.sarif
+          retention-days: 30
+
+      - name: Parse test results and generate summary
+        run: |
+          echo "## 📊 Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          TOTAL_TESTS=0
+          FAILURES=0
+          ERRORS=0
+          SKIPPED=0
+
+          for xml_file in $(find . -path "*/target/surefire-reports/TEST-*.xml" -not -path "*/flamme-example/*" 2>/dev/null); do
+            if [ -f "$xml_file" ]; then
+              T=$(xmllint --xpath "string(/testsuite/@tests)" "$xml_file" 2>/dev/null || echo "0")
+              F=$(xmllint --xpath "string(/testsuite/@failures)" "$xml_file" 2>/dev/null || echo "0")
+              E=$(xmllint --xpath "string(/testsuite/@errors)" "$xml_file" 2>/dev/null || echo "0")
+              S=$(xmllint --xpath "string(/testsuite/@skipped)" "$xml_file" 2>/dev/null || echo "0")
+              TOTAL_TESTS=$((TOTAL_TESTS + T))
+              FAILURES=$((FAILURES + F))
+              ERRORS=$((ERRORS + E))
+              SKIPPED=$((SKIPPED + S))
+            fi
+          done
+
+          if [ $TOTAL_TESTS -gt 0 ]; then
+            SUCCESS_RATE=$(echo "scale=1; ($TOTAL_TESTS - $FAILURES - $ERRORS) * 100 / $TOTAL_TESTS" | bc -l)
+          else
+            SUCCESS_RATE="0"
+          fi
+
+          echo "### 🧪 Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Total Tests | $TOTAL_TESTS |" >> $GITHUB_STEP_SUMMARY
+          echo "| Passed | $(($TOTAL_TESTS - $FAILURES - $ERRORS)) |" >> $GITHUB_STEP_SUMMARY
+          echo "| Failed | $FAILURES |" >> $GITHUB_STEP_SUMMARY
+          echo "| Errors | $ERRORS |" >> $GITHUB_STEP_SUMMARY
+          echo "| Skipped | $SKIPPED |" >> $GITHUB_STEP_SUMMARY
+          echo "| Success Rate | ${SUCCESS_RATE}% |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          JACOCO=$(find . -path "*/target/site/jacoco/jacoco.xml" -not -path "*/flamme-example/*" 2>/dev/null | head -1)
+          if [ -f "$JACOCO" ]; then
+            INSTRUCTION_COVERED=$(grep -o '<counter type="INSTRUCTION" missed="[0-9]*" covered="[0-9]*"/>' "$JACOCO" | tail -1 | sed 's/.*covered="\([0-9]*\)".*/\1/' || echo "0")
+            INSTRUCTION_MISSED=$(grep -o '<counter type="INSTRUCTION" missed="[0-9]*" covered="[0-9]*"/>' "$JACOCO" | tail -1 | sed 's/.*missed="\([0-9]*\)".*/\1/' || echo "0")
+            BRANCH_COVERED=$(grep -o '<counter type="BRANCH" missed="[0-9]*" covered="[0-9]*"/>' "$JACOCO" | tail -1 | sed 's/.*covered="\([0-9]*\)".*/\1/' || echo "0")
+            BRANCH_MISSED=$(grep -o '<counter type="BRANCH" missed="[0-9]*" covered="[0-9]*"/>' "$JACOCO" | tail -1 | sed 's/.*missed="\([0-9]*\)".*/\1/' || echo "0")
+            LINE_COVERED=$(grep -o '<counter type="LINE" missed="[0-9]*" covered="[0-9]*"/>' "$JACOCO" | tail -1 | sed 's/.*covered="\([0-9]*\)".*/\1/' || echo "0")
+            LINE_MISSED=$(grep -o '<counter type="LINE" missed="[0-9]*" covered="[0-9]*"/>' "$JACOCO" | tail -1 | sed 's/.*missed="\([0-9]*\)".*/\1/' || echo "0")
+
+            INSTRUCTION_TOTAL=$((INSTRUCTION_COVERED + INSTRUCTION_MISSED))
+            BRANCH_TOTAL=$((BRANCH_COVERED + BRANCH_MISSED))
+            LINE_TOTAL=$((LINE_COVERED + LINE_MISSED))
+
+            INSTRUCTION_PCT=$(echo "scale=1; $INSTRUCTION_COVERED * 100 / $INSTRUCTION_TOTAL" | bc -l)
+            BRANCH_PCT=$(echo "scale=1; $BRANCH_COVERED * 100 / $BRANCH_TOTAL" | bc -l)
+            LINE_PCT=$(echo "scale=1; $LINE_COVERED * 100 / $LINE_TOTAL" | bc -l)
+
+            echo "### 📈 Code Coverage" >> $GITHUB_STEP_SUMMARY
+            echo "| Coverage Type | Covered | Total | Percentage |" >> $GITHUB_STEP_SUMMARY
+            echo "|---------------|---------|-------|------------|" >> $GITHUB_STEP_SUMMARY
+            echo "| Instructions | $INSTRUCTION_COVERED | $INSTRUCTION_TOTAL | ${INSTRUCTION_PCT}% |" >> $GITHUB_STEP_SUMMARY
+            echo "| Branches | $BRANCH_COVERED | $BRANCH_TOTAL | ${BRANCH_PCT}% |" >> $GITHUB_STEP_SUMMARY
+            echo "| Lines | $LINE_COVERED | $LINE_TOTAL | ${LINE_PCT}% |" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "### 🔒 Security Scan Results" >> $GITHUB_STEP_SUMMARY
+          if [ -f "trivy-results.sarif" ]; then
+            echo "- ✅ Trivy vulnerability scan completed" >> $GITHUB_STEP_SUMMARY
+            echo "- 📄 SARIF report uploaded to Security tab" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- ❌ Trivy scan results not found" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          echo "### 📦 Artifacts Generated" >> $GITHUB_STEP_SUMMARY
+          for jar in $(find runtime/target deployment/target -name "*.jar" -maxdepth 1 2>/dev/null | sort); do
+            echo "- \`$(basename $jar)\`" >> $GITHUB_STEP_SUMMARY
+          done
+          echo "- SBOM: \`sbom.spdx.json\`" >> $GITHUB_STEP_SUMMARY
+          if [ -n "$JACOCO" ]; then
+            echo "- Coverage Report: \`$JACOCO\`" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          echo "### 🏗️ Build Environment" >> $GITHUB_STEP_SUMMARY
+          echo "- Java Version: ${{ matrix.java-version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Runner OS: ubuntu-latest" >> $GITHUB_STEP_SUMMARY
+          echo "- Maven Version: \$(mvn --version | head -1)" >> $GITHUB_STEP_SUMMARY

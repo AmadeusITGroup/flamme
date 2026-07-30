@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package com.amadeus.order;
+package io.github.amadeusitgroup.order;
 
 option java_outer_classname = "OrderProtos";
 option java_multiple_files = true;
