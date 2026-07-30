@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package com.amadeus.payment;
+package io.github.amadeusitgroup.payment;
 
 option java_outer_classname = "PaymentProtos";
 

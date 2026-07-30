@@ -3,7 +3,7 @@
   <modelVersion>4.0.0</modelVersion>
 
   <parent>
-    <groupId>com.amadeus</groupId>
+    <groupId>io.github.amadeusitgroup</groupId>
     <artifactId>flamme-parent</artifactId>
     <version>1.0.0-SNAPSHOT</version>
   </parent>
@@ -15,7 +15,7 @@
       <artifactId>quarkus-arc-deployment</artifactId>
     </dependency>
     <dependency>
-      <groupId>com.amadeus</groupId>
+      <groupId>io.github.amadeusitgroup</groupId>
       <artifactId>flamme</artifactId>
       <version>${project.version}</version>
     </dependency>
@@ -156,7 +156,7 @@
             <configuration>
               <argLine>@{jacoco.agent.arg}</argLine>
               <systemPropertyVariables>
-                <quarkus.jacoco.instrument-artifacts.runtime.group-id>com.amadeus</quarkus.jacoco.instrument-artifacts.runtime.group-id>
+                <quarkus.jacoco.instrument-artifacts.runtime.group-id>io.github.amadeusitgroup</quarkus.jacoco.instrument-artifacts.runtime.group-id>
                 <quarkus.jacoco.instrument-artifacts.runtime.artifact-id>flamme</quarkus.jacoco.instrument-artifacts.runtime.artifact-id>
                 <quarkus.jacoco.report>true</quarkus.jacoco.report>
               </systemPropertyVariables>
