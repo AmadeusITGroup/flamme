@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.1.0](https://github.com/AmadeusITGroup/flamme/compare/v1.0.0...v1.1.0) (2026-07-30)
+
+
+### Features
+
+* first release ([a0d7054](https://github.com/AmadeusITGroup/flamme/commit/a0d7054c7f282ba240cea524abbf2de0b481637c))
+
+
+### Bug Fixes
+
+* **deployment:** race condition in test fixtures ([#14](https://github.com/AmadeusITGroup/flamme/issues/14)) ([a74a4bf](https://github.com/AmadeusITGroup/flamme/commit/a74a4bf252d8647ac1c77f29ee796e49f47f5b53))
+
+
+### Documentation
+
+* add installation section ([8afdaf6](https://github.com/AmadeusITGroup/flamme/commit/8afdaf6e8b59bc3b443750cf099971593ddb66c9))
+
 ## 1.0.0 (2026-07-30)
 
 
