@@ -14,7 +14,7 @@
 ## Overview
 
 
-Flamme is a Quarkus extension which addresses the current problems in modern microservice architectures.
+Flamme is a Quarkus extension which addresses the current problems in modern microservice architectures. It provides a programming model which can server as a basis for a distributed runtime.
 
 A **Flamme** application is composed of several components. A component is represented by a Java interface annotated with `@Flamme`, containing a single method that uses `Map<String, Message>` (a `MultiPayload`) for both its argument and return types.
 
@@ -25,18 +25,17 @@ Using runtime configurations, you can decide which components are co-located in 
 
 ## Installation
 
-> [!IMPORTANT]
-> Flamme is not yet published to a remote artifactory. Follow the [Getting Started](#getting-started) guide to install it locally first.
-
-Add the Flamme dependency to your `pom.xml`:
+Add the Flamme dependency to the `pom.xml` of your quarkus application:
 
 ```xml
 <dependency>
     <groupId>io.github.amadeusitgroup</groupId>
     <artifactId>flamme</artifactId>
-    <version>1.0.0-SNAPSHOT</version>
+    <version>${flamme.version}</version>
 </dependency>
 ```
+
+Use the latest release version, available on the [releases page](https://github.com/amadeusitgroup/flamme/releases).
 
 
 ## Getting Started
@@ -45,15 +44,9 @@ Add the Flamme dependency to your `pom.xml`:
 
 - Java 21+
 - Maven 3.9+
+- Docker
 - A running [NATS](https://nats.io) server (for distributed deployments)
 
-### Clone and build
-
-```bash
-git clone https://github.com/amadeusitgroup/flamme.git
-cd flamme
-mvn clean compile -DskipTests 
-```
 
 ### Run the example
 You can find an example application and instructions on how to run it [here](./flamme-example/README.md).

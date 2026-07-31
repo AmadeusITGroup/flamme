@@ -20,6 +20,19 @@ nats.url="nats://localhost:4222"
 ```
 
 
+### Package the example
+```bash
+cd flamme
+# skip gpg signing for local builds
+mvn clean install -Dgpg.skip=true
+
+cd flamme-example
+mvn clean package
+
+```
+
+
+
 
 ### Run as a monolith
 
