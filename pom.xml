@@ -6,7 +6,14 @@
   <version>1.0.0-SNAPSHOT</version>
   <packaging>pom</packaging>
   <name>Flamme - Parent</name>
-
+  <description>A quarkus extension that serves as the basis for a distributed runtime.</description>
+    <developers>
+        <developer>
+            <email>muhammad.mnayar@gmail.com</email>
+            <name>Mouhamad Al Mounayar</name>
+        </developer>
+    </developers>
+  <url>https://amadeusitgroup.github.io/flamme</url>
   <modules>
     <module>deployment</module>
     <module>runtime</module>
