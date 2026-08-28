@@ -1,20 +1,19 @@
 package io.github.amadeusitgroup;
 
+import com.google.protobuf.Any;
+import com.google.protobuf.InvalidProtocolBufferException;
 import io.github.amadeusitgroup.components.Gateway;
+import io.github.amadeusitgroup.context.OrderProcessingContext;
 import io.github.amadeusitgroup.order.Order;
 import io.github.amadeusitgroup.order.OrderItem;
-import io.github.amadeusitgroup.payment.PaymentProtos.Payment;
-import io.github.amadeusitgroup.utils.Keys;
-import com.google.protobuf.StringValue;
+import io.github.amadeusitgroup.payment.Payment;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
@@ -69,16 +68,19 @@ public class OrderResource {
                     : request.payment.paymentMethod())
             .build();
 
-    Map<String, com.google.protobuf.Message> payload =
-        new HashMap<>(Map.of(Keys.ORDER, order, Keys.PAYMENT, payment));
+    OrderProcessingContext context =
+        OrderProcessingContext.newBuilder().setOrder(order).setPayment(payment).build();
 
     return gateway
-        .execute(payload)
+        .execute(Any.pack(context))
         .thenApply(
-            multipayload -> {
-              String orderId = ((StringValue) multipayload.get(Keys.ORDER_ID)).getValue();
-              String receiptId = ((StringValue) multipayload.get(Keys.RECEIPT_ID)).getValue();
-              return new CreateOrderResponse(orderId, receiptId);
+            payload -> {
+              try {
+                OrderProcessingContext result = payload.unpack(OrderProcessingContext.class);
+                return new CreateOrderResponse(result.getOrderId(), result.getReceiptId());
+              } catch (InvalidProtocolBufferException e) {
+                throw new RuntimeException("failed to unpack order processing context", e);
+              }
             });
   }
 }

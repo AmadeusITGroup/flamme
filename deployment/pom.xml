@@ -9,14 +9,14 @@
   </parent>
   <artifactId>flamme-deployment</artifactId>
   <name>Flamme - Deployment</name>
-  <description>A quarkus extension that serves as the basis for a distributed runtime.</description> 
+  <description>A quarkus extension that serves as the basis for a distributed runtime.</description>
+  <url>https://amadeusitgroup.github.io/flamme</url>
   <developers>
     <developer>
-        <email>muhammad.mnayar@gmail.com</email>
-        <name>Mouhamad Al Mounayar</name>
+      <name>Mouhamad Al Mounayar</name>
+      <email>muhammad.mnayar@gmail.com</email>
     </developer>
   </developers>
-  <url>https://amadeusitgroup.github.io/flamme</url>
   <dependencies>
     <dependency>
       <groupId>io.quarkus</groupId>

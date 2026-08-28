@@ -1,14 +1,13 @@
 package io.github.amadeusitgroup.flamme.runtime;
 
+import com.google.protobuf.Any;
 import io.github.amadeusitgroup.flamme.runtime.annotations.FlammeImpl;
 import io.github.amadeusitgroup.flamme.runtime.errors.FlammeImplRuntimeError;
 import io.github.amadeusitgroup.flamme.runtime.utils.Strings;
-import com.google.protobuf.Message;
 import io.quarkus.arc.Arc;
 import io.quarkus.arc.InstanceHandle;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
-import java.util.Map;
 import java.util.function.Consumer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -23,8 +22,7 @@ public class Handler {
       try {
         InstanceHandle<?> implHandle = resolveFlammeImpl(interfaceClass);
         Object[] args = constructArgs(method, message);
-        Map<String, Message> result =
-            invoke(method, implHandle.get(), args, interfaceClass.getName());
+        Any result = invoke(method, implHandle.get(), args, interfaceClass.getName());
         publish(message, outputSubjects, broker, result);
       } catch (FlammeImplRuntimeError e) {
         log.atError().log(e.getLocalizedMessage());
@@ -50,19 +48,18 @@ public class Handler {
     };
   }
 
-  @SuppressWarnings("unchecked")
-  private static Map<String, Message> invoke(
-      Method method, Object impl, Object[] args, String className) throws FlammeImplRuntimeError {
+  private static Any invoke(Method method, Object impl, Object[] args, String className)
+      throws FlammeImplRuntimeError {
     try {
       // It is safe to cast because signature was validated at build time.
-      return (Map<String, Message>) method.invoke(impl, args);
+      return (Any) method.invoke(impl, args);
     } catch (InvocationTargetException | IllegalAccessException e) {
       throw new FlammeImplRuntimeError(Strings.invokationError(className), e);
     }
   }
 
   private static void publish(
-      FlammeMessage message, String[] outputSubjects, Broker broker, Map<String, Message> result) {
+      FlammeMessage message, String[] outputSubjects, Broker broker, Any result) {
     if (message.replyTo() != null && outputSubjects.length == 0) {
       broker.publish(message.replyTo(), message.wrap(result));
       return;

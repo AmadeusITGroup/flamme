@@ -15,7 +15,7 @@ To create a Flamme component, you simply write a Java interface and annotate it 
     produces = {}
 )
 public interface Component {
-    Map<String, Message> execute(Map<String, Message> args);
+    Any execute(Any args);
 }
 ```
 
@@ -23,9 +23,8 @@ Here, the `@Flamme` annotation takes a service name, a `consumes` array and a `p
 
 ## Method Signature
 
-Let's talk more about the method signature. All `@Flamme` methods should follow the same signature as in the component above: they take a `Map<String, Message>` as their argument, where `Message` refers to `com.google.protobuf.Message`.
+Let's talk more about the method signature. All `@Flamme` methods should follow the same signature as in the component above: they take a `com.google.protobuf.Any` as their argument.
 
-This means all your components need to define their data using a protobuf grammar, and use the generated protobuf classes as arguments to your business logic. We made this choice because protobuf objects extending `Message` can be passed around in-memory with no overhead, and if you ever need to route them over the network, they're fast to serialize. We use a `Map` so that a single method can take multiple protobuf objects as arguments, each identified by a `String` key. We'll go into this in more detail in the next section.
 
 ## Headers
 
@@ -34,8 +33,8 @@ Flamme also supports optional headers as a second method parameter.
 Accepted signatures are:
 
 ```java
-Map<String, Message> execute(Map<String, Message> payload);
-Map<String, Message> execute(Map<String, Message> payload, Map<String, String> headers);
+Any execute(Any payload);
+Any execute(Any payload, Map<String, String> headers);
 ```
 
 Headers are propagated by Flamme across local in-process routing and remote transport, so your business code can read metadata (for example tracing ids, tenant ids, locale, or auth context) without adding transport-specific code.
@@ -49,7 +48,7 @@ Example:
     produces = {"message-published-b"}
 )
 public interface ComponentB {
-    Map<String, Message> execute(Map<String, Message> payload, Map<String, String> headers);
+    Any execute(Any payload, Map<String, String> headers);
 }
 ```
 
@@ -62,7 +61,7 @@ After writing your interface you can then go ahead and write your implementation
 @Unremovable
 @FlammeImpl
 public class ComponentImpl implements Component {
-    Map<String, Message> execute(Map<String, Message> args) {
+    Any execute(Any args) {
         // business logic goes here.
     };
 }

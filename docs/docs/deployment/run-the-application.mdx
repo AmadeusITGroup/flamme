@@ -12,33 +12,27 @@ Let's consider the following topology:`ComponentA` publishes a message to the su
     serviceName="component-a",
     consumes = {},
     produces = {"message-published-a"}
-    // multipayload keys definition goes here.
-    mutlipayloadKeys = {}
 )
 public interface ComponentA {
-    Map<String, Message> execute(Map<String, Message>)
+    Any execute(Any)
 }
 
 @Flamme(
     serviceName="component-b",
     consumes = {"message-published-a"},
-    produces = {"message-published-b"},
-    // multipayload keys definition goes here.
-    mutlipayloadKeys = {}
+    produces = {"message-published-b"}
 )
 public interface ComponentB {
-    Map<String, Message> execute(Map<String, Message>)
+    Any execute(Any)
 }
 
 @Flamme(
     serviceName="component-c",
     consumes = {"message-published-a"},
     produces = {"message-published-c"}
-    // multipayload keys definition goes here.
-    mutlipayloadKeys = {}
 )
 public interface ComponentC {
-    Map<String, Message> execute(Map<String, Message>)
+    Any execute(Any)
 }
 ```
 
@@ -136,16 +130,14 @@ Gateways are components that trigger a flow. Their `consumes` array is empty, an
 @Flamme(
     serviceName = "gateway",
     consumes = {},
-    produces = {"fan-out-subject"},
-    // multipayload key definiton goes here.
-    mutlipayloadKeys = {}
+    produces = {"fan-out-subject"}
 )
 public interface Gateway {
-    CompletableFuture<Map<String, Message>> execute(Map<String, Message> arguments, Map<String, String> headers);
+    CompletableFuture<Any> execute(Any arguments, Map<String, String> headers);
 }
 ```
 
-Note the return type: `CompletableFuture<Map<String, Message>>`, unlike the plain `Map<String, Message>` used by regular components.
+Note the return type: `CompletableFuture<Any>`, unlike the plain `Any` used by regular components.
 
 When Flamme detects a gateway, it injects a proxy bean that does the following:
 
@@ -188,8 +180,8 @@ As mentioned before, the philosophy of Flamme is that you never write transport 
 When we said earlier that a component can short-circuit the flow and reply to the gateway, this isn't something the developer implements. If an error is thrown inside a component's implementation, Flamme catches it and automatically routes the error back to the gateway on replyTo. The developer doesn't write any code to make this happen; they just throw, and the rest is handled by the framework.
 :::
 
-Since the proxy returns a plain `CompletableFuture<Map<String, Message>>`, you're not limited to returning the raw map as-is. You can register callbacks on it, such as `thenApply`, `thenCompose`, `thenAccept`, and so on, to transform the flow's result into whatever shape your endpoint actually needs to return.
-For example, extracting a single field from the result map and wrapping it in a proper response DTO:
+Since the proxy returns a plain `CompletableFuture<Any>`, you're not limited to returning the raw payload as-is. You can register callbacks on it, such as `thenApply`, `thenCompose`, `thenAccept`, and so on, to transform the flow's result into whatever shape your endpoint actually needs to return.
+For example, unpacking the typed payload and wrapping it in a proper response DTO:
 
 ```java
 @Path("/publish")
@@ -201,11 +193,15 @@ public class PublishResource {
     @POST
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
-    public CompletableFuture<PublishResponse> publish(Map<String, Message> arguments) {
+    public CompletableFuture<PublishResponse> publish(Any arguments) {
         return gateway.execute(arguments)
             .thenApply(result -> {
-                Message status = result.get("status");
-                return new PublishResponse(status.getContent());
+                try {
+                    StatusPayload status = result.unpack(StatusPayload.class);
+                    return new PublishResponse(status.getContent());
+                } catch (InvalidProtocolBufferException e) {
+                    throw new RuntimeException("failed to unpack status payload", e);
+                }
             });
     }
 }

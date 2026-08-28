@@ -1,15 +1,13 @@
 package io.github.amadeusitgroup.flamme.test.fixtures;
 
-import io.github.amadeusitgroup.flamme.runtime.annotations.Flamme;
-import io.github.amadeusitgroup.flamme.runtime.annotations.Flamme.MultiPayloadKey;
-import io.github.amadeusitgroup.flamme.runtime.annotations.FlammeImpl;
-import com.google.protobuf.Message;
+import com.google.protobuf.Any;
+import com.google.protobuf.InvalidProtocolBufferException;
 import com.google.protobuf.StringValue;
+import io.github.amadeusitgroup.flamme.runtime.annotations.Flamme;
+import io.github.amadeusitgroup.flamme.runtime.annotations.FlammeImpl;
 import io.quarkus.arc.Unremovable;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
-import java.util.HashMap;
-import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicReference;
@@ -19,7 +17,7 @@ public class Components {
       serviceName = "gateway",
       produces = {"fan-out-event"})
   public interface Gateway {
-    CompletableFuture<Map<String, Message>> call(Map<String, Message> payload);
+    CompletableFuture<Any> call(Any payload);
   }
 
   @Flamme(
@@ -27,15 +25,14 @@ public class Components {
       consumes = {"fan-out-event"},
       produces = {"upper-case-event"})
   public interface ToUpperComponent {
-    Map<String, Message> toUpper(Map<String, Message> input);
+    Any toUpper(Any input) throws InvalidProtocolBufferException;
   }
 
   @Flamme(
       serviceName = "leaf",
-      multiPayloadKeys = {@MultiPayloadKey(id = "VALUE", type = StringValue.class)},
       consumes = {"fan-out-event"})
   public interface LeafComponent {
-    Map<String, Message> backToCaller(Map<String, Message> payload);
+    Any backToCaller(Any payload);
   }
 
   @FlammeImpl
@@ -44,11 +41,10 @@ public class Components {
   public static class ToUpperComponentImpl implements ToUpperComponent {
     @Inject ToUpperProbe probe;
 
-    public Map<String, Message> toUpper(Map<String, Message> input) {
+    public Any toUpper(Any input) throws InvalidProtocolBufferException {
       probe.lastInput.set(input);
-      StringValue stringValue = (StringValue) input.get("VALUE");
-      Map<String, Message> result = new HashMap<>();
-      result.put("VALUE", StringValue.of(stringValue.getValue().toUpperCase()));
+      StringValue stringValue = (StringValue) input.unpack(StringValue.class);
+      Any result = Any.pack(StringValue.of(stringValue.getValue().toUpperCase()));
       probe.lastOutput.set(result);
       probe.called.countDown();
       return result;
@@ -59,7 +55,7 @@ public class Components {
   @Unremovable
   @ApplicationScoped
   public static class LeafComponentImpl implements LeafComponent {
-    public Map<String, Message> backToCaller(Map<String, Message> payload) {
+    public Any backToCaller(Any payload) {
       return payload;
     }
   }
@@ -67,7 +63,7 @@ public class Components {
   @ApplicationScoped
   public static class ToUpperProbe {
     public final CountDownLatch called = new CountDownLatch(1);
-    public final AtomicReference<Map<String, Message>> lastInput = new AtomicReference<>();
-    public final AtomicReference<Map<String, Message>> lastOutput = new AtomicReference<>();
+    public final AtomicReference<Any> lastInput = new AtomicReference<>();
+    public final AtomicReference<Any> lastOutput = new AtomicReference<>();
   }
 }

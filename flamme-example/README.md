@@ -106,20 +106,20 @@ Each step is a Java interface annotated with `@Flamme`, declaring the NATS subje
 // 1. Gateway — entry point, publishes to "order-received"
 @Flamme(serviceName = "gateway", consumes = {}, produces = {"order-received"}, ...)
 public interface Gateway {
-    CompletableFuture<Map<String, Message>> execute(Map<String, Message> arguments);
+    CompletableFuture<Any> execute(Any args);
 }
 
 // 2. ValidateOrder — consumes "order-received", publishes to "order-validated"
 @Flamme(serviceName = "validate-order",
         consumes = {"order-received"}, produces = {"order-validated"}, ...)
 public interface ValidateOrder {
-    Map<String, Message> validateOrder(Map<String, Message> args);
+    Any validateOrder(Any args);
 }
 
 // 3. ChargePayment — consumes "order-validated", terminal step
 @Flamme(serviceName = "charge-payment",
         consumes = {"order-validated"}, produces = {}, ...)
 public interface ChargePayment {
-    Map<String, Message> chargePayment(Map<String, Message> args);
+    Any chargePayment(Any args);
 }
 ```

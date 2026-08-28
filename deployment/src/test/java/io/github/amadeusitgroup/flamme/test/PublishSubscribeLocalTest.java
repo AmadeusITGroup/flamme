@@ -4,14 +4,14 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
+import com.google.protobuf.Any;
+import com.google.protobuf.InvalidProtocolBufferException;
+import com.google.protobuf.StringValue;
 import io.github.amadeusitgroup.flamme.runtime.utils.Strings;
 import io.github.amadeusitgroup.flamme.test.fixtures.Components;
-import com.google.protobuf.Message;
-import com.google.protobuf.StringValue;
 import io.github.amadeusitgroup.testcontainers.nats.NatsContainer;
 import io.quarkus.test.QuarkusUnitTest;
 import jakarta.inject.Inject;
-import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -58,19 +58,23 @@ public class PublishSubscribeLocalTest {
 
   @Test
   void gatewayShouldReceiveResultsFromLeafNode() {
-    Map<String, Message> payload = Map.of("VALUE", StringValue.of("Hello"));
-    CompletableFuture<Map<String, Message>> future = gateway.call(payload);
+    Any payload = Any.pack(StringValue.of("Hello"));
+    CompletableFuture<Any> future = gateway.call(payload);
     try {
-      assertEquals(StringValue.of("Hello"), future.get(5, TimeUnit.SECONDS).get("VALUE"));
-    } catch (TimeoutException | ExecutionException | InterruptedException exception) {
+      assertEquals(
+          StringValue.of("Hello"), future.get(5, TimeUnit.SECONDS).unpack(StringValue.class));
+    } catch (InvalidProtocolBufferException
+        | TimeoutException
+        | ExecutionException
+        | InterruptedException exception) {
       fail(Strings.FUTURE_DID_NOT_COMPLETE);
     }
   }
 
   @Test
   void nonLeafSubscriberShouldReceiveAndProcessMessage() {
-    Map<String, Message> payload = Map.of("VALUE", StringValue.of("Hello"));
-    Map<String, Message> expectedOutput = Map.of("VALUE", StringValue.of("HELLO"));
+    Any payload = Any.pack(StringValue.of("Hello"));
+    Any expectedOutput = Any.pack(StringValue.of("HELLO"));
     gateway.call(payload);
     try {
       assertTrue(probe.called.await(2, TimeUnit.SECONDS), "ToUpper was not invoked");

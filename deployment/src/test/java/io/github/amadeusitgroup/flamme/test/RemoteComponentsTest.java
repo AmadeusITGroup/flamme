@@ -3,6 +3,9 @@ package io.github.amadeusitgroup.flamme.test;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.fail;
 
+import com.google.protobuf.Any;
+import com.google.protobuf.InvalidProtocolBufferException;
+import com.google.protobuf.StringValue;
 import io.github.amadeusitgroup.flamme.runtime.errors.FlammeImplRuntimeError;
 import io.github.amadeusitgroup.flamme.runtime.payload.MultiPayloadCodec;
 import io.github.amadeusitgroup.flamme.runtime.payload.PayloadCodec;
@@ -10,13 +13,10 @@ import io.github.amadeusitgroup.flamme.runtime.transport.NatsClientManager;
 import io.github.amadeusitgroup.flamme.runtime.utils.Strings;
 import io.github.amadeusitgroup.flamme.test.fixtures.Components;
 import io.github.amadeusitgroup.flamme.test.fixtures.Components.Gateway;
-import com.google.protobuf.Message;
-import com.google.protobuf.StringValue;
 import io.github.amadeusitgroup.testcontainers.nats.NatsContainer;
 import io.nats.client.Dispatcher;
 import io.quarkus.test.QuarkusUnitTest;
 import jakarta.inject.Inject;
-import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -69,19 +69,15 @@ public class RemoteComponentsTest {
   void shouldReplyToNatsInboxWhenLeafNode() {
     Dispatcher dispatcher = natsClientManager.getConnection().createDispatcher();
     CompletableFuture<StringValue> resultFuture = new CompletableFuture<>();
-    Map<String, Message> payload = Map.of("VALUE", StringValue.of("Hello"));
+    Any payload = Any.pack(StringValue.of("Hello"));
     dispatcher.subscribe(
         "INBOX.>",
         (message) -> {
           try {
             StringValue result =
-                (StringValue)
-                    payloadCodec
-                        .decodePayload(
-                            message.getData(), Map.of("VALUE", StringValue.class.getName()))
-                        .get("VALUE");
+                payloadCodec.decodePayload(message.getData()).unpack(StringValue.class);
             resultFuture.complete(result);
-          } catch (FlammeImplRuntimeError e) {
+          } catch (InvalidProtocolBufferException | FlammeImplRuntimeError e) {
             fail(Strings.FAILED_TO_READ_PAYLOAD);
           }
         });
@@ -98,19 +94,16 @@ public class RemoteComponentsTest {
   void shouldPublishToNatsWhenSubscriberIsRemote() {
     Dispatcher dispatcher = natsClientManager.getConnection().createDispatcher();
     CompletableFuture<StringValue> resultFuture = new CompletableFuture<>();
-    Map<String, Message> payload = Map.of("VALUE", StringValue.of("Hello"));
+    Any payload = Any.pack(StringValue.of("Hello"));
     dispatcher.subscribe(
         "fan-out-event",
         (message) -> {
           try {
             StringValue result =
                 (StringValue)
-                    payloadCodec
-                        .decodePayload(
-                            message.getData(), Map.of("VALUE", StringValue.class.getName()))
-                        .get("VALUE");
+                    payloadCodec.decodePayload(message.getData()).unpack(StringValue.class);
             resultFuture.complete(result);
-          } catch (FlammeImplRuntimeError e) {
+          } catch (InvalidProtocolBufferException | FlammeImplRuntimeError e) {
             fail(Strings.FAILED_TO_READ_PAYLOAD);
           }
         });
@@ -123,12 +116,7 @@ public class RemoteComponentsTest {
     }
   }
 
-  private static byte[] encode(Map<String, Message> payload) {
-    try {
-      return payloadCodec.encodePayload(payload);
-    } catch (FlammeImplRuntimeError e) {
-      fail(Strings.FAILED_TO_READ_PAYLOAD);
-      return new byte[0];
-    }
+  private static byte[] encode(Any payload) {
+    return payloadCodec.encodePayload(payload);
   }
 }
