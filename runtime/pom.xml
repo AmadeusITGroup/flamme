@@ -144,6 +144,12 @@
           </execution>
         </executions>
       </plugin>
+      <plugin>
+        <artifactId>maven-javadoc-plugin</artifactId>
+        <configuration>
+          <sourcepath>${project.build.sourceDirectory}:${project.build.directory}/generated-sources/protobuf/java</sourcepath>
+        </configuration>
+      </plugin>
     </plugins>
     <extensions>
       <extension>

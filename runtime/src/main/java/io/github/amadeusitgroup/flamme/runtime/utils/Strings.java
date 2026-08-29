@@ -38,6 +38,7 @@ public final class Strings {
       "return type for component %s should be Any";
   public static final String PARAMETER_TYPE_SHOULD_BE_ANY =
       "first parameter type for component %s should be Any";
+  public static final String SKIPPING_NATS = "no remote components found, skipping nats connection";
 
   public static final String classNotFoundIndex(String className) {
     return String.format(CLASS_NOT_FOUND_IN_INDEX, className);

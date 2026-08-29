@@ -25,17 +25,21 @@ public class ConnectionInitializer {
 
   void onStart(@Observes @Priority(1) StartupEvent startupEvent) throws NatsConnectionError {
     try {
-      Options options =
-          new Options.Builder()
-              .server(config.nats().url())
-              .connectionName(config.nats().connectionName())
-              .build();
-      var maybeRemote = config.services().values().stream().filter(serviceConfig -> serviceConfig.remote()).findFirst();
+      var maybeRemote =
+          config.services().values().stream()
+              .filter(serviceConfig -> serviceConfig.remote())
+              .findFirst();
       if (maybeRemote.isEmpty()) {
         // don't start NATS unless there is one remote node in the topology
         log.atInfo().log(Strings.SKIPPING_NATS);
         return;
       }
+      Options options =
+          new Options.Builder()
+              .server(config.nats().url())
+              .connectionName(config.nats().connectionName())
+              .build();
+
       Connection connection = Nats.connect(options);
       natsClientManager.setConnection(connection);
     } catch (Throwable t) {

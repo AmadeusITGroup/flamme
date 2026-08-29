@@ -78,7 +78,7 @@ public class Broker {
                     String replyTo = message.subject();
                     var replySubjectHandlerOptional = replySubjectHandler(replyTo);
                     if (replySubjectHandlerOptional.isEmpty()) return;
-                    Optional<Envelope.Error> errorMessageOptional =
+                    Optional<FlammeError> errorMessageOptional =
                         payloadCodec.decodeError(message.data());
                     if (errorMessageOptional.isPresent()) {
                       replySubjectHandlerOptional
