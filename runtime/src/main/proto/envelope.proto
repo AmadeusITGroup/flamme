@@ -4,12 +4,14 @@ package io.github.amadeusitgroup.flamme.runtime;
 
 import "google/protobuf/any.proto";
 
+option java_multiple_files = true;
+
 message FlammeEnvelope {
     google.protobuf.Any payload = 1;
-    Error error = 2;
+    FlammeError error = 2;
 }
 
-message Error {
+message FlammeError {
     string error_message = 1;
     string service_name = 2;
     string exception_type = 3;
