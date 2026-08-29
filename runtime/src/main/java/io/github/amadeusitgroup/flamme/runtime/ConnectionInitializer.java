@@ -30,6 +30,12 @@ public class ConnectionInitializer {
               .server(config.nats().url())
               .connectionName(config.nats().connectionName())
               .build();
+      var maybeRemote = config.services().values().stream().filter(serviceConfig -> serviceConfig.remote()).findFirst();
+      if (maybeRemote.isEmpty()) {
+        // don't start NATS unless there is one remote node in the topology
+        log.atInfo().log(Strings.SKIPPING_NATS);
+        return;
+      }
       Connection connection = Nats.connect(options);
       natsClientManager.setConnection(connection);
     } catch (Throwable t) {
