@@ -28,34 +28,26 @@ export default function Home(): ReactNode {
   const { siteConfig } = useDocusaurusContext();
   const helloWorldExampleCode = `import io.github.amadeusitgroup.flamme.runtime.annotations.Flamme;
 import io.github.amadeusitgroup.flamme.runtime.annotations.FlammeImpl;
-import com.google.protobuf.Message;
+import com.google.protobuf.Any;
+import com.google.protobuf.InvalidProtocolBufferException;
 import com.google.protobuf.StringValue;
 import jakarta.inject.Inject;
-import java.util.Map;
 
-@Flamme(
-    serviceName = "greeter",
-    multiPayloadKeys = {
-        @Flamme.MultiPayloadKey(id = GreeterService.NAME_KEY, type = StringValue.class),
-        @Flamme.MultiPayloadKey(id = GreeterService.GREETING_KEY, type = StringValue.class)
-    }
-)
+@Flamme(serviceName = "greeter", consumes = {}, produces = {})
 public interface GreeterService {
-    String NAME_KEY = "name";
-    String GREETING_KEY = "greeting";
-
-    Map<String, Message> sayHello(Map<String, Message> payload);
+    Any sayHello(Any payload);
 }
 
 @FlammeImpl
 class GreeterServiceImpl implements GreeterService {
     @Override
-    public Map<String, Message> sayHello(Map<String, Message> payload) {
-        StringValue name = (StringValue) payload.get(NAME_KEY);
-        return Map.of(
-            GREETING_KEY,
-            StringValue.of("Hello, " + name.getValue() + "!")
-        );
+    public Any sayHello(Any payload) {
+        try {
+            StringValue name = payload.unpack(StringValue.class);
+            return Any.pack(StringValue.of("Hello, " + name.getValue() + "!"));
+        } catch (InvalidProtocolBufferException e) {
+            throw new RuntimeException(e);
+        }
     }
 }
 
@@ -64,11 +56,12 @@ class GreeterResource {
     GreeterService greeterService;
 
     String greet() {
-        Map<String, Message> response = greeterService.sayHello(
-            Map.of(GreeterService.NAME_KEY, StringValue.of("World"))
-        );
-
-        return ((StringValue) response.get(GreeterService.GREETING_KEY)).getValue();
+        Any response = greeterService.sayHello(Any.pack(StringValue.of("World")));
+        try {
+            return response.unpack(StringValue.class).getValue();
+        } catch (InvalidProtocolBufferException e) {
+            throw new RuntimeException(e);
+        }
     }
 }
 `;

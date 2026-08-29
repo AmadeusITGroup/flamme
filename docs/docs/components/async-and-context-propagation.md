@@ -13,13 +13,13 @@ Flamme uses `SmallRyeManagedExecutor` and executes each method on a separate vir
 @FlammeImpl
 public class ComponentImpl implements Component {
     @Override
-    public Map<String, Message> execute(Map<String, Message> arguments) {
+    public Any execute(Any arguments) {
         // Running on a virtual thread, so this blocking call
         // doesn't tie up the underlying platform thread.
         HttpResponse<String> response = httpClient.send(request, BodyHandlers.ofString());
 
         String result = response.body();
-        return Map.of("result-event", StringValue.of(result));
+        return Any.pack(StringValue.of(result));
     }
 }
 ```
@@ -32,4 +32,3 @@ Flamme offloads subscriber/service work to virtual threads to avoid blocking tho
 When Flamme offloads work, it restores two kinds of execution context:
 - Thread context (MicroProfile / SmallRye Context Propagation): carries caller metadata (for example logging/security context) across the thread hop.
 - Vert.x + CDI execution context: if no Vert.x context is active, Flamme creates/duplicates one and activates CDI request context around handler execution. This keeps Quarkus reactive/runtime behavior and `@RequestScoped` access consistent in async paths.
-

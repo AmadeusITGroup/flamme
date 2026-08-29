@@ -1,10 +1,10 @@
 package io.github.amadeusitgroup.flamme.runtime;
 
+import com.google.protobuf.Any;
 import io.github.amadeusitgroup.flamme.runtime.annotations.AnnotationData;
 import io.github.amadeusitgroup.flamme.runtime.errors.FlammeServiceRegistrationError;
 import io.github.amadeusitgroup.flamme.runtime.utils.FlammeUtils;
 import io.github.amadeusitgroup.flamme.runtime.utils.Strings;
-import com.google.protobuf.Message;
 import io.quarkus.arc.Arc;
 import io.quarkus.arc.InstanceHandle;
 import io.quarkus.runtime.RuntimeValue;
@@ -59,8 +59,7 @@ public class FlammeRecorder {
                   // listen for remote
                   broker.registerLocalSubscription(consumerSubject, handler);
                   if (payloadType != null) {
-                    broker.registerNatsSubscription(
-                        consumerSubject, handler, annotationData.multipayloadKeys());
+                    broker.registerNatsSubscription(consumerSubject, handler);
                   }
                 }
               });
@@ -89,7 +88,7 @@ public class FlammeRecorder {
   private InvocationHandler buildProxyMethod(Broker broker, AnnotationData annotation) {
     return (proxy, method, args) -> {
       String replyToSbuject = FlammeUtils.newReplyTo();
-      CompletableFuture<Map<String, Message>> replyFuture = new CompletableFuture<>();
+      CompletableFuture<Any> replyFuture = new CompletableFuture<>();
       replyFuture.orTimeout(config.getValue().replyTimeout(), TimeUnit.SECONDS);
       replyFuture.whenComplete(
           (result, exception) -> {
@@ -97,8 +96,8 @@ public class FlammeRecorder {
               broker.cancelReply(replyToSbuject);
             }
           });
-      broker.subscribeForReply(replyToSbuject, replyFuture, annotation.multipayloadKeys());
-      Map<String, Message> payloadMessage = (Map<String, Message>) args[0];
+      broker.subscribeForReply(replyToSbuject, replyFuture);
+      Any payloadMessage = (Any) args[0];
       Map<String, String> headers = args.length > 1 ? (Map<String, String>) args[1] : null;
       FlammeMessage message = new FlammeMessage(payloadMessage, headers, replyToSbuject);
       // publish messages to the gateway's producers

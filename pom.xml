@@ -7,13 +7,20 @@
   <packaging>pom</packaging>
   <name>Flamme - Parent</name>
   <description>A quarkus extension that serves as the basis for a distributed runtime.</description>
-    <developers>
-        <developer>
-            <email>muhammad.mnayar@gmail.com</email>
-            <name>Mouhamad Al Mounayar</name>
-        </developer>
-    </developers>
   <url>https://amadeusitgroup.github.io/flamme</url>
+
+  <licenses>
+    <license>
+      <name>MIT License</name>
+      <url>https://opensource.org/licenses/MIT</url>
+    </license>
+  </licenses>
+  <developers>
+    <developer>
+      <name>Mouhamad Al Mounayar</name>
+      <email>muhammad.mnayar@gmail.com</email>
+    </developer>
+  </developers>
   <modules>
     <module>deployment</module>
     <module>runtime</module>
@@ -25,13 +32,6 @@
     <developerConnection>scm:git:git@github.com:amadeusitgroup/flamme.git</developerConnection>
     <url>https://github.com/amadeusitgroup/flamme</url>
   </scm>
-
-  <licenses>
-    <license>
-      <name>MIT License</name>
-      <url>https://opensource.org/licenses/MIT</url>
-    </license>
-  </licenses>
 
   <properties>
     <compiler-plugin.version>3.15.0</compiler-plugin.version>
@@ -148,10 +148,10 @@
         <executions>
           <execution>
             <id>sign-artifacts</id>
-            <phase>verify</phase>
             <goals>
               <goal>sign</goal>
             </goals>
+            <phase>verify</phase>
             <configuration>
               <keyname>${gpg.keyname}</keyname>
               <passphrase>${gpg.passphrase}</passphrase>

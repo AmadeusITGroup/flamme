@@ -1,6 +1,5 @@
 package io.github.amadeusitgroup.flamme.runtime.annotations;
 
-import com.google.protobuf.Message;
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
@@ -14,13 +13,4 @@ public @interface Flamme {
   String[] consumes() default {};
 
   String[] produces() default {};
-
-  MultiPayloadKey[] multiPayloadKeys() default {};
-
-  @Retention(RetentionPolicy.RUNTIME)
-  public @interface MultiPayloadKey {
-    String id();
-
-    Class<? extends Message> type();
-  }
 }

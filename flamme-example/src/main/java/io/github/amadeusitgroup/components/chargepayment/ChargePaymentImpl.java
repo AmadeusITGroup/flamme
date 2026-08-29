@@ -1,14 +1,13 @@
 package io.github.amadeusitgroup.components.chargepayment;
 
+import com.google.protobuf.Any;
+import com.google.protobuf.InvalidProtocolBufferException;
+import io.github.amadeusitgroup.context.OrderProcessingContext;
 import io.github.amadeusitgroup.flamme.runtime.annotations.FlammeImpl;
 import io.github.amadeusitgroup.order.Order;
-import io.github.amadeusitgroup.payment.PaymentProtos.Payment;
-import io.github.amadeusitgroup.utils.Keys;
-import com.google.protobuf.Message;
-import com.google.protobuf.StringValue;
+import io.github.amadeusitgroup.payment.Payment;
 import io.quarkus.arc.Unremovable;
 import jakarta.enterprise.context.ApplicationScoped;
-import java.util.Map;
 import java.util.UUID;
 
 @FlammeImpl
@@ -16,11 +15,16 @@ import java.util.UUID;
 @ApplicationScoped
 public class ChargePaymentImpl implements ChargePayment {
   @Override
-  public Map<String, Message> chargePayment(Map<String, Message> args) throws InterruptedException {
+  public Any chargePayment(Any args) throws InterruptedException {
+    OrderProcessingContext context;
+    try {
+      context = args.unpack(OrderProcessingContext.class);
+    } catch (InvalidProtocolBufferException e) {
+      throw new RuntimeException("failed to unpack order processing context", e);
+    }
 
-    Order order = (Order) args.get(Keys.ORDER);
-
-    Payment payment = (Payment) args.get(Keys.PAYMENT);
+    Order order = context.getOrder();
+    Payment payment = context.getPayment();
 
     String id = order.getId();
     // simulate an external call to make the payment
@@ -35,8 +39,7 @@ public class ChargePaymentImpl implements ChargePayment {
 
     String receiptId = UUID.randomUUID().toString();
 
-    // add receiptId to the multipayload
-    args.put(Keys.RECEIPT_ID, StringValue.of(receiptId));
-    return args;
+    OrderProcessingContext updatedContext = context.toBuilder().setReceiptId(receiptId).build();
+    return Any.pack(updatedContext);
   }
 }

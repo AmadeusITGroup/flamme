@@ -1,9 +1,9 @@
 package io.github.amadeusitgroup.flamme.deployment.utils;
 
+import com.google.protobuf.Any;
 import io.github.amadeusitgroup.flamme.deployment.errors.InvalidFlammeComponent;
 import io.github.amadeusitgroup.flamme.runtime.annotations.AnnotationData;
 import io.github.amadeusitgroup.flamme.runtime.utils.Strings;
-import com.google.protobuf.Message;
 import io.quarkus.deployment.builditem.CombinedIndexBuildItem;
 import java.util.Collection;
 import java.util.List;
@@ -19,7 +19,7 @@ import org.jboss.jandex.Type.Kind;
 public final class FlammeSignatureValidator {
   private static final DotName MAP = DotName.createSimple(Map.class.getName());
   private static final DotName STRING = DotName.createSimple(String.class.getName());
-  private static final DotName MESSAGE = DotName.createSimple(Message.class.getName());
+  private static final DotName ANY = DotName.createSimple(Any.class.getName());
   private static final DotName COMPLETABLE_FUTURE =
       DotName.createSimple(CompletableFuture.class.getName());
 
@@ -40,7 +40,7 @@ public final class FlammeSignatureValidator {
     }
 
     Type parameterType = method.parameters().get(0).type();
-    validateMultipayloadType(parameterType, interfaceClassName);
+    validateTypeIsAny(parameterType, interfaceClassName);
 
     if (method.parameters().size() == 2) {
       Type headersType = method.parameters().get(1).type();
@@ -92,17 +92,17 @@ public final class FlammeSignatureValidator {
     }
   }
 
-  private static void validateMultipayloadType(Type type, String interfaceClassName)
+  private static void validateTypeIsAny(Type type, String interfaceClassName)
       throws InvalidFlammeComponent {
-    ParameterizedType mapType = validateAndGetParameterizedType(type, "multipayload map");
-    if (!mapType.name().equals(MAP)) {
-      throw new InvalidFlammeComponent(
-          Strings.expected_map(interfaceClassName, mapType.name().toString()));
+    if (!type.name().equals(ANY)) {
+      throw new InvalidFlammeComponent(Strings.parameterTypeShouldBeAny(interfaceClassName));
     }
-    List<Type> args = mapType.arguments();
-    if (args.size() != 2 || !isOfTypeString(args.get(0)) || !isOfTypeMessage(args.get(1))) {
-      throw new InvalidFlammeComponent(
-          Strings.wrongParameterTypeForMultipayloadMap(interfaceClassName));
+  }
+
+  private static void validateReturnTypeIsAny(Type type, String interfaceClassName)
+      throws InvalidFlammeComponent {
+    if (!type.name().equals(ANY)) {
+      throw new InvalidFlammeComponent(Strings.returnTypeShouldBeAny(interfaceClassName));
     }
   }
 
@@ -111,7 +111,7 @@ public final class FlammeSignatureValidator {
     if (returnType.kind() == Kind.VOID) {
       return;
     }
-    validateMultipayloadType(returnType, interfaceClassName);
+    validateReturnTypeIsAny(returnType, interfaceClassName);
   }
 
   private static ParameterizedType validateAndGetParameterizedType(Type type, String context)
@@ -136,14 +136,10 @@ public final class FlammeSignatureValidator {
     }
 
     Type inner = futureType.arguments().get(0);
-    validateMultipayloadType(inner, interfaceClassName);
+    validateReturnTypeIsAny(inner, interfaceClassName);
   }
 
   private static boolean isOfTypeString(Type type) {
     return type.name() != null && type.name().equals(STRING);
-  }
-
-  private static boolean isOfTypeMessage(Type type) {
-    return type.name() != null && type.name().equals(MESSAGE);
   }
 }

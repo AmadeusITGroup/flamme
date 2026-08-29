@@ -3,15 +3,14 @@ package io.github.amadeusitgroup.flamme.test;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.google.protobuf.Any;
+import com.google.protobuf.StringValue;
 import io.github.amadeusitgroup.flamme.runtime.Broker;
 import io.github.amadeusitgroup.flamme.runtime.annotations.Flamme;
 import io.github.amadeusitgroup.flamme.runtime.annotations.FlammeImpl;
-import com.google.protobuf.Message;
-import com.google.protobuf.StringValue;
 import io.github.amadeusitgroup.testcontainers.nats.NatsContainer;
 import io.quarkus.test.QuarkusUnitTest;
 import jakarta.inject.Inject;
-import java.util.Map;
 import org.jboss.shrinkwrap.api.ShrinkWrap;
 import org.jboss.shrinkwrap.api.spec.JavaArchive;
 import org.junit.jupiter.api.AfterAll;
@@ -41,13 +40,13 @@ public class ServiceRegistrationTest {
       produces = {},
       consumes = {CONSUMER_SUBJECT})
   interface FlammeComponent {
-    Map<String, Message> execute(Map<String, Message> multipayload);
+    Any execute(Any multipayload);
   }
 
   @FlammeImpl
   class FlammeComponentImpl implements FlammeComponent {
-    public Map<String, Message> execute(Map<String, Message> multipayload) {
-      return Map.of("key", StringValue.of("value"));
+    public Any execute(Any multipayload) {
+      return Any.pack(StringValue.of("value"));
     }
   }
 

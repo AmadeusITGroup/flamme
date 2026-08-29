@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+package io.github.amadeusitgroup.context;
+import "order.proto";
+import "payment.proto";
+
+option java_multiple_files = true;
+
+message OrderProcessingContext {
+  io.github.amadeusitgroup.order.Order order = 1; 
+  io.github.amadeusitgroup.payment.Payment payment = 2; 
+  string order_id = 3;
+  string receipt_id = 4;
+}

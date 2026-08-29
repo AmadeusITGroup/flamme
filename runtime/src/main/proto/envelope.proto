@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package io.github.amadeusitgroup.flamme.runtime;
+
+import "google/protobuf/any.proto";
+
+message FlammeEnvelope {
+    google.protobuf.Any payload = 1;
+    Error error = 2;
+}
+
+message Error {
+    string error_message = 1;
+    string service_name = 2;
+    string exception_type = 3;
+    string cause_error_message = 4;
+}

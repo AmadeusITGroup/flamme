@@ -27,7 +27,6 @@ const sidebars: SidebarsConfig = {
       label: "Components",
       items: [
         "components/flamme-annotation",
-        "components/multipayload",
         "components/async-and-context-propagation",
       ],
     },

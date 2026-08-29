@@ -1,21 +1,26 @@
 package io.github.amadeusitgroup.components.validateorder;
 
+import com.google.protobuf.Any;
+import com.google.protobuf.InvalidProtocolBufferException;
+import io.github.amadeusitgroup.context.OrderProcessingContext;
 import io.github.amadeusitgroup.flamme.runtime.annotations.FlammeImpl;
 import io.github.amadeusitgroup.order.Order;
-import io.github.amadeusitgroup.utils.Keys;
-import com.google.protobuf.Message;
-import com.google.protobuf.StringValue;
 import io.quarkus.arc.Unremovable;
 import jakarta.enterprise.context.ApplicationScoped;
-import java.util.Map;
 
 @Unremovable
 @FlammeImpl
 @ApplicationScoped
 public class ValidateOrderImpl implements ValidateOrder {
   @Override
-  public Map<String, Message> validateOrder(Map<String, Message> args) {
-    Order order = (Order) args.get(Keys.ORDER);
+  public Any validateOrder(Any args) {
+    OrderProcessingContext context;
+    try {
+      context = args.unpack(OrderProcessingContext.class);
+    } catch (InvalidProtocolBufferException e) {
+      throw new RuntimeException("failed to unpack order processing context", e);
+    }
+    Order order = context.getOrder();
     String id = order.getId();
     // We consider the order validated if it is not empty
     if (order.getItemsList().isEmpty()) {
@@ -24,10 +29,7 @@ public class ValidateOrderImpl implements ValidateOrder {
 
     System.out.println("[ValidateOrder] order with id " + id + " was validated.");
 
-    // add the order id to the multipayload map.
-    args.put(Keys.ORDER_ID, StringValue.of(order.getId()));
-
-    // Forward the order
-    return args;
+    OrderProcessingContext updatedContext = context.toBuilder().setOrderId(order.getId()).build();
+    return Any.pack(updatedContext);
   }
 }

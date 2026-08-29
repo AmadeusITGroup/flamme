@@ -12,8 +12,6 @@ public final class Strings {
       "expected map for headers parameter in interface %s found %s";
   public static final String WRONG_PARAMETER_TYPE_FOR_HEADERS_MAP =
       "map must be parameterized as map <string, string> for interface %s";
-  public static final String WRONG_PARAMETER_TYPE_FOR_MULTIPAYLOAD_MAP =
-      "map must be parameterized as map <string, message> for interface %s";
 
   public static final String GATEWAY_RETURNS_VOID = "flamme gateways cannot return void";
   public static final String GATEWAY_SHOULD_RETURN_FUTURE =
@@ -24,6 +22,7 @@ public final class Strings {
       "no implementation found for %s qualified with @FlammeImpl";
   public static final String INVOKATION_ERROR = "error invoking %s";
   public static final String NATS_CONNECTION_ERROR = "there was an error connecting to NATS";
+
   public static final String NATS_NOT_CONFIGURED =
       "nats is not configured, remote services and subscriptions will not be available";
   public static final String FAILED_TO_READ_PAYLOAD =
@@ -33,6 +32,12 @@ public final class Strings {
       "there was an unexpected error when receiving the reply message";
   public static final String FUTURE_DID_NOT_COMPLETE = "future did not complete in time";
   public static final String THREAD_WAS_INTERRUPTED = "the main thread was interrupted";
+  public static final String ERROR_DECODING_REMOTE_PAYLOAD =
+      "there was an error decoding a remote payload";
+  public static final String RETURN_TYPE_SHOULD_BE_ANY =
+      "return type for component %s should be Any";
+  public static final String PARAMETER_TYPE_SHOULD_BE_ANY =
+      "first parameter type for component %s should be Any";
 
   public static final String classNotFoundIndex(String className) {
     return String.format(CLASS_NOT_FOUND_IN_INDEX, className);
@@ -63,10 +68,6 @@ public final class Strings {
     return String.format(WRONG_PARAMETER_TYPE_FOR_HEADERS_MAP, className);
   }
 
-  public static final String wrongParameterTypeForMultipayloadMap(String className) {
-    return String.format(WRONG_PARAMETER_TYPE_FOR_MULTIPAYLOAD_MAP, className);
-  }
-
   public static final String classNotFoundThreadContext(String className) {
     return String.format(CLASS_NOT_FOUND_THREAD_CONTEXT, className);
   }
@@ -81,5 +82,13 @@ public final class Strings {
 
   public static final String failedToProcessMessage(String subject) {
     return String.format(FAILED_TO_PROCESS_MESSAGE, subject);
+  }
+
+  public static final String returnTypeShouldBeAny(String interfaceClassName) {
+    return String.format(RETURN_TYPE_SHOULD_BE_ANY, interfaceClassName);
+  }
+
+  public static final String parameterTypeShouldBeAny(String interfaceClassName) {
+    return String.format(PARAMETER_TYPE_SHOULD_BE_ANY, interfaceClassName);
   }
 }

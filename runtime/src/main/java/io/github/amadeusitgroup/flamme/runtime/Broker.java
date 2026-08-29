@@ -1,5 +1,6 @@
 package io.github.amadeusitgroup.flamme.runtime;
 
+import com.google.protobuf.Any;
 import io.github.amadeusitgroup.flamme.runtime.errors.FlammeImplRuntimeError;
 import io.github.amadeusitgroup.flamme.runtime.payload.PayloadCodec;
 import io.github.amadeusitgroup.flamme.runtime.transport.TransportClient;
@@ -8,7 +9,6 @@ import io.github.amadeusitgroup.flamme.runtime.transport.TransportMessage;
 import io.github.amadeusitgroup.flamme.runtime.utils.ContextHelper;
 import io.github.amadeusitgroup.flamme.runtime.utils.FlammeUtils;
 import io.github.amadeusitgroup.flamme.runtime.utils.Strings;
-import com.google.protobuf.Message;
 import io.quarkus.runtime.StartupEvent;
 import io.smallrye.context.SmallRyeManagedExecutor;
 import jakarta.annotation.PreDestroy;
@@ -42,9 +42,7 @@ public class Broker {
   private ManagedExecutor executor;
 
   private Map<String, List<Consumer<FlammeMessage>>> localSubscriptions = new ConcurrentHashMap<>();
-  private Map<String, CompletableFuture<Map<String, Message>>> replyFutures =
-      new ConcurrentHashMap<>();
-  private Map<String, Map<String, String>> replyMultiPayloadKeys = new ConcurrentHashMap<>();
+  private Map<String, CompletableFuture<Any>> replyFutures = new ConcurrentHashMap<>();
   private Set<String> natsRouteSubjects = new HashSet<>();
   private List<Runnable> deferredNatsSubscriptions = new ArrayList<>();
 
@@ -80,19 +78,18 @@ public class Broker {
                     String replyTo = message.subject();
                     var replySubjectHandlerOptional = replySubjectHandler(replyTo);
                     if (replySubjectHandlerOptional.isEmpty()) return;
-                    var multiPayloadKeysOptional = replyMultipayloadKeys(replyTo);
-                    var multiPayloadKeys = multiPayloadKeysOptional.orElse(Map.of());
-                    Optional<String> errorMessageOptional =
+                    Optional<Envelope.Error> errorMessageOptional =
                         payloadCodec.decodeError(message.data());
                     if (errorMessageOptional.isPresent()) {
                       replySubjectHandlerOptional
                           .get()
                           .completeExceptionally(
-                              new FlammeImplRuntimeError(errorMessageOptional.get()));
+                              new FlammeImplRuntimeError(
+                                  errorMessageOptional.get().getErrorMessage()));
                     } else {
                       replySubjectHandlerOptional
                           .get()
-                          .complete(payloadCodec.decodePayload(message.data(), multiPayloadKeys));
+                          .complete(payloadCodec.decodePayload(message.data()));
                     }
                   },
                   Strings.ERROR_WHEN_RECEIVING_REPLY));
@@ -170,16 +167,11 @@ public class Broker {
     }
   }
 
-  private Optional<Map<String, String>> replyMultipayloadKeys(String replyTo) {
-    return Optional.ofNullable(replyMultiPayloadKeys.remove(replyTo));
-  }
-
-  private Optional<CompletableFuture<Map<String, Message>>> replySubjectHandler(String subject) {
+  private Optional<CompletableFuture<Any>> replySubjectHandler(String subject) {
     return Optional.ofNullable(replyFutures.remove(subject));
   }
 
-  void registerNatsSubscription(
-      String subject, Consumer<FlammeMessage> handler, Map<String, String> multipayloadKeys) {
+  void registerNatsSubscription(String subject, Consumer<FlammeMessage> handler) {
     Runnable subscribeAction =
         () -> {
           TransportDispatcher dispatcher = transportClient.dispatcher();
@@ -194,8 +186,7 @@ public class Broker {
                       ContextHelper.runWithDuplicatedContext(
                           () -> {
                             try {
-                              Map<String, com.google.protobuf.Message> payload =
-                                  payloadCodec.decodePayload(message.data(), multipayloadKeys);
+                              Any payload = payloadCodec.decodePayload(message.data());
                               handler.accept(
                                   new FlammeMessage(payload, message.headers(), message.replyTo()));
                             } catch (Throwable t) {
@@ -219,15 +210,10 @@ public class Broker {
 
   void cancelReply(String replyTo) {
     replyFutures.remove(replyTo);
-    replyMultiPayloadKeys.remove(replyTo);
   }
 
-  void subscribeForReply(
-      String replyTo,
-      CompletableFuture<Map<String, com.google.protobuf.Message>> replyFuture,
-      Map<String, String> multiPayloadKeys) {
+  void subscribeForReply(String replyTo, CompletableFuture<Any> replyFuture) {
     replyFutures.put(replyTo, replyFuture);
-    replyMultiPayloadKeys.put(replyTo, multiPayloadKeys);
   }
 
   private boolean isNatsAvailable() {

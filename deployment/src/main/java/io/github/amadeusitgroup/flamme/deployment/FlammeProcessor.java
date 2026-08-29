@@ -24,10 +24,7 @@ import io.quarkus.deployment.builditem.CombinedIndexBuildItem;
 import io.quarkus.deployment.builditem.FeatureBuildItem;
 import jakarta.inject.Singleton;
 import java.util.Collection;
-import java.util.HashMap;
-import java.util.Map;
 import org.jboss.jandex.AnnotationInstance;
-import org.jboss.jandex.AnnotationValue;
 import org.jboss.jandex.DotName;
 
 class FlammeProcessor {
@@ -76,7 +73,6 @@ class FlammeProcessor {
       String interfaceClassName = annotation.target().asClass().name().toString();
       AnnotationData annotationData = validateAndGetAnnotationData(annotation, combinedIndex);
       FlammeSignatureValidator.validateComponent(interfaceClassName, annotationData, combinedIndex);
-      @SuppressWarnings("unused")
       Class<?> interfaceClass;
       try {
         interfaceClass =
@@ -103,24 +99,6 @@ class FlammeProcessor {
     String componentName = annotation.value("serviceName").asString();
     String[] producers = AnnotationHelper.annotationAsStringArray(annotation.value("produces"));
     String[] consumers = AnnotationHelper.annotationAsStringArray(annotation.value("consumes"));
-    Map<String, String> multipayloadKeys = new HashMap<>();
-    AnnotationInstance[] annotationInstances =
-        AnnotationHelper.annotationAsNestedArray(annotation.value("multiPayloadKeys"));
-    for (AnnotationInstance instance : annotationInstances) {
-      AnnotationValue idValue = instance.value("id");
-      AnnotationValue typeValue = instance.value("type");
-      if (idValue == null || typeValue == null) continue;
-      String id = idValue.asString();
-      DotName dotName = typeValue.asClass().name();
-      String fqcn = dotName.toString();
-      try {
-        Thread.currentThread().getContextClassLoader().loadClass(fqcn);
-      } catch (ClassNotFoundException e) {
-        throw new InvalidFlammeComponent(Strings.classNotFoundIndex(dotName.toString()), e);
-      }
-      multipayloadKeys.put(id, fqcn);
-    }
-    ;
-    return new AnnotationData(componentName, producers, consumers, multipayloadKeys);
+    return new AnnotationData(componentName, producers, consumers);
   }
 }
