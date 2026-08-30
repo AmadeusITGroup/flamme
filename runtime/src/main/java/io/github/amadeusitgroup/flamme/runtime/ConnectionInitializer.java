@@ -39,7 +39,6 @@ public class ConnectionInitializer {
               .server(config.nats().url())
               .connectionName(config.nats().connectionName())
               .build();
-
       Connection connection = Nats.connect(options);
       natsClientManager.setConnection(connection);
     } catch (Throwable t) {

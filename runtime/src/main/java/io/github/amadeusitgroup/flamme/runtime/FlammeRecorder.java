@@ -98,8 +98,9 @@ public class FlammeRecorder {
           });
       broker.subscribeForReply(replyToSbuject, replyFuture);
       Any payloadMessage = (Any) args[0];
+      FlammeEnvelope envelope = FlammeEnvelope.newBuilder().setPayload(payloadMessage).build();
       Map<String, String> headers = args.length > 1 ? (Map<String, String>) args[1] : null;
-      FlammeMessage message = new FlammeMessage(payloadMessage, headers, replyToSbuject);
+      FlammeMessage message = new FlammeMessage(envelope, headers, replyToSbuject);
       // publish messages to the gateway's producers
       for (String subject : annotation.producers()) {
         broker.publish(subject, message);

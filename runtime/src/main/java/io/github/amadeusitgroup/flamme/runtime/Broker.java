@@ -78,18 +78,14 @@ public class Broker {
                     String replyTo = message.subject();
                     var replySubjectHandlerOptional = replySubjectHandler(replyTo);
                     if (replySubjectHandlerOptional.isEmpty()) return;
-                    Optional<FlammeError> errorMessageOptional =
-                        payloadCodec.decodeError(message.data());
-                    if (errorMessageOptional.isPresent()) {
+                    FlammeEnvelope envelope = payloadCodec.decodePayload(message.data());
+                    if (envelope.hasError()) {
                       replySubjectHandlerOptional
                           .get()
                           .completeExceptionally(
-                              new FlammeImplRuntimeError(
-                                  errorMessageOptional.get().getErrorMessage()));
+                              new FlammeImplRuntimeError(envelope.getError().getErrorMessage()));
                     } else {
-                      replySubjectHandlerOptional
-                          .get()
-                          .complete(payloadCodec.decodePayload(message.data()));
+                      replySubjectHandlerOptional.get().complete(envelope.getPayload());
                     }
                   },
                   Strings.ERROR_WHEN_RECEIVING_REPLY));
@@ -115,7 +111,12 @@ public class Broker {
     var replySubjectHandlerOptional = replySubjectHandler(subject);
     if (replySubjectHandlerOptional.isEmpty()) return false;
     var replyFuture = replySubjectHandlerOptional.get();
-    replyFuture.complete(message.payload());
+    FlammeEnvelope envelope = message.envelope();
+    if (envelope.hasError()) {
+      replyFuture.completeExceptionally(new FlammeImplRuntimeError(envelope.getError().getErrorMessage()));
+    } else {
+      replyFuture.complete(envelope.getPayload());
+    }
     return true;
   }
 
@@ -124,7 +125,7 @@ public class Broker {
     try {
       transportClient.publish(
           new TransportMessage(
-              subject, message.headers(), payloadCodec.encodePayload(message.payload()), null));
+              subject, message.headers(), payloadCodec.encodePayload(message.envelope()), null));
     } catch (Throwable t) {
     }
   }
@@ -160,7 +161,7 @@ public class Broker {
           new TransportMessage(
               subject,
               message.headers(),
-              payloadCodec.encodePayload(message.payload()),
+              payloadCodec.encodePayload(message.envelope()),
               message.replyTo());
       transportClient.publish(transportMessage);
     } catch (Throwable t) {
@@ -186,9 +187,10 @@ public class Broker {
                       ContextHelper.runWithDuplicatedContext(
                           () -> {
                             try {
-                              Any payload = payloadCodec.decodePayload(message.data());
+                              FlammeEnvelope envelope = payloadCodec.decodePayload(message.data());
                               handler.accept(
-                                  new FlammeMessage(payload, message.headers(), message.replyTo()));
+                                  new FlammeMessage(
+                                      envelope, message.headers(), message.replyTo()));
                             } catch (Throwable t) {
                               log.atError().log(Strings.failedToProcessMessage(subject));
                             }

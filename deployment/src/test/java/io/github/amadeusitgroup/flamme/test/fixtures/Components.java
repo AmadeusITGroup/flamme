@@ -66,4 +66,22 @@ public class Components {
     public final AtomicReference<Any> lastInput = new AtomicReference<>();
     public final AtomicReference<Any> lastOutput = new AtomicReference<>();
   }
+
+  @Flamme(
+      serviceName = "failing-component",
+      consumes = {"fan-out-event"},
+      produces = {"produces"})
+  public interface FailingComponent {
+    Any fail(Any args);
+  }
+
+  @FlammeImpl
+  @Unremovable
+  @ApplicationScoped
+  public static class FailingComponentImpl implements FailingComponent {
+    @Override
+    public Any fail(Any args) {
+      throw new RuntimeException("failing component failed!");
+    }
+  }
 }

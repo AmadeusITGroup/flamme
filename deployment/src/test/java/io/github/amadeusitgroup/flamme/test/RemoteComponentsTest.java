@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.fail;
 import com.google.protobuf.Any;
 import com.google.protobuf.InvalidProtocolBufferException;
 import com.google.protobuf.StringValue;
+import io.github.amadeusitgroup.flamme.runtime.FlammeEnvelope;
 import io.github.amadeusitgroup.flamme.runtime.errors.FlammeImplRuntimeError;
 import io.github.amadeusitgroup.flamme.runtime.payload.MultiPayloadCodec;
 import io.github.amadeusitgroup.flamme.runtime.payload.PayloadCodec;
@@ -70,18 +71,24 @@ public class RemoteComponentsTest {
     Dispatcher dispatcher = natsClientManager.getConnection().createDispatcher();
     CompletableFuture<StringValue> resultFuture = new CompletableFuture<>();
     Any payload = Any.pack(StringValue.of("Hello"));
+    FlammeEnvelope envelope = FlammeEnvelope.newBuilder().setPayload(payload).build();
     dispatcher.subscribe(
         "INBOX.>",
         (message) -> {
           try {
             StringValue result =
-                payloadCodec.decodePayload(message.getData()).unpack(StringValue.class);
+                payloadCodec
+                    .decodePayload(message.getData())
+                    .getPayload()
+                    .unpack(StringValue.class);
             resultFuture.complete(result);
           } catch (InvalidProtocolBufferException | FlammeImplRuntimeError e) {
             fail(Strings.FAILED_TO_READ_PAYLOAD);
           }
         });
-    natsClientManager.getConnection().publish("fan-out-event", "INBOX.test-reply", encode(payload));
+    natsClientManager
+        .getConnection()
+        .publish("fan-out-event", "INBOX.test-reply", payloadCodec.encodePayload(envelope));
     try {
       StringValue result = resultFuture.get(5, TimeUnit.SECONDS);
       assertEquals(StringValue.of("Hello"), result);
@@ -101,7 +108,10 @@ public class RemoteComponentsTest {
           try {
             StringValue result =
                 (StringValue)
-                    payloadCodec.decodePayload(message.getData()).unpack(StringValue.class);
+                    payloadCodec
+                        .decodePayload(message.getData())
+                        .getPayload()
+                        .unpack(StringValue.class);
             resultFuture.complete(result);
           } catch (InvalidProtocolBufferException | FlammeImplRuntimeError e) {
             fail(Strings.FAILED_TO_READ_PAYLOAD);
@@ -114,9 +124,5 @@ public class RemoteComponentsTest {
     } catch (TimeoutException | ExecutionException | InterruptedException e) {
       fail(Strings.FUTURE_DID_NOT_COMPLETE, e);
     }
-  }
-
-  private static byte[] encode(Any payload) {
-    return payloadCodec.encodePayload(payload);
   }
 }

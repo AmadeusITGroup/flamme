@@ -8,6 +8,7 @@ import io.quarkus.arc.Arc;
 import io.quarkus.arc.InstanceHandle;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.util.Optional;
 import java.util.function.Consumer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -25,6 +26,16 @@ public class Handler {
         Any result = invoke(method, implHandle.get(), args, interfaceClass.getName());
         publish(message, outputSubjects, broker, result);
       } catch (FlammeImplRuntimeError e) {
+        // get the error message that the component raised.
+        // InvocationTargetException -> FlammeRuntimeException
+        String errorMessage =
+            Optional.ofNullable(e.getCause())
+                .map(Throwable::getCause)
+                .map(Throwable::getMessage)
+                .orElse(e.getMessage());
+        log.atDebug().addArgument(errorMessage).log("component level error message: {}");
+        FlammeError error = FlammeError.newBuilder().setErrorMessage(errorMessage).build();
+        broker.publish(message.replyTo(), message.error(error));
         log.atError().log(e.getLocalizedMessage());
       }
     };
@@ -43,8 +54,8 @@ public class Handler {
   private static Object[] constructArgs(Method method, FlammeMessage message) {
     return switch (method.getParameterCount()) {
       case 0 -> null;
-      case 1 -> new Object[] {message.payload()};
-      default -> new Object[] {message.payload(), message.headers()};
+      case 1 -> new Object[] {message.envelope().getPayload()};
+      default -> new Object[] {message.envelope().getPayload(), message.headers()};
     };
   }
 
