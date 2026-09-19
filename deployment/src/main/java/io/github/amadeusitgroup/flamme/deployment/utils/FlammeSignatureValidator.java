@@ -5,6 +5,7 @@ import io.github.amadeusitgroup.flamme.deployment.errors.InvalidFlammeComponent;
 import io.github.amadeusitgroup.flamme.runtime.annotations.AnnotationData;
 import io.github.amadeusitgroup.flamme.runtime.utils.Strings;
 import io.quarkus.deployment.builditem.CombinedIndexBuildItem;
+import java.lang.reflect.Modifier;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -31,7 +32,7 @@ public final class FlammeSignatureValidator {
     ClassInfo classInfo = getClassInfo(interfaceClassName, combinedIndex);
     MethodInfo method = getSingleMethod(classInfo, interfaceClassName);
     validateParameterCount(method, interfaceClassName);
-
+    validateAccessModifier(classInfo.flags(), interfaceClassName);
     boolean isProxy = annotationData.consumers().length == 0;
     if (isProxy) {
       validateProxyReturnType(method.returnType(), interfaceClassName);
@@ -45,6 +46,13 @@ public final class FlammeSignatureValidator {
     if (method.parameters().size() == 2) {
       Type headersType = method.parameters().get(1).type();
       validateHeadersType(headersType, interfaceClassName);
+    }
+  }
+
+  private static void validateAccessModifier(short flags, String interfaceClassName)
+      throws InvalidFlammeComponent {
+    if (!Modifier.isPublic(flags)) {
+      throw new InvalidFlammeComponent(Strings.wrongAccessModifier(interfaceClassName));
     }
   }
 
