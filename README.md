@@ -16,7 +16,7 @@
 
 Flamme is a Quarkus extension which addresses the current problems in modern microservice architectures. It provides a programming model which can server as a basis for a distributed runtime.
 
-A **Flamme** application is composed of several components. A component is represented by a Java interface annotated with `@Flamme`, containing a single method that uses `Map<String, Message>` (a `MultiPayload`) for both its argument and return types.
+A **Flamme** application is composed of several components. A component is represented by a Java interface annotated with `@Flamme`, containing a single method. 
 
 Flamme is **network agnostic** and **event-driven** — you do not write networking or serialization code. Instead, you declare within the `@Flamme` annotation which subjects a component subscribes to and publishes to. The framework handles the remaining infrastructure logic.
 
