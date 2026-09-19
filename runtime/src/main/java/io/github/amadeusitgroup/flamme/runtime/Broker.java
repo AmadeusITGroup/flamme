@@ -113,7 +113,8 @@ public class Broker {
     var replyFuture = replySubjectHandlerOptional.get();
     FlammeEnvelope envelope = message.envelope();
     if (envelope.hasError()) {
-      replyFuture.completeExceptionally(new FlammeImplRuntimeError(envelope.getError().getErrorMessage()));
+      replyFuture.completeExceptionally(
+          new FlammeImplRuntimeError(envelope.getError().getErrorMessage()));
     } else {
       replyFuture.complete(envelope.getPayload());
     }

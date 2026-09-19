@@ -39,6 +39,11 @@ public final class Strings {
   public static final String PARAMETER_TYPE_SHOULD_BE_ANY =
       "first parameter type for component %s should be Any";
   public static final String SKIPPING_NATS = "no remote components found, skipping nats connection";
+  public static final String WRONG_ACCESS_MODIFIER = "%s should be public";
+
+  public static final String wrongAccessModifier(String className) {
+    return String.format(WRONG_ACCESS_MODIFIER, className);
+  }
 
   public static final String classNotFoundIndex(String className) {
     return String.format(CLASS_NOT_FOUND_IN_INDEX, className);

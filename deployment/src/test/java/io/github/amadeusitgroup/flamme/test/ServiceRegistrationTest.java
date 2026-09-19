@@ -39,7 +39,7 @@ public class ServiceRegistrationTest {
       serviceName = SERVICE_NAME,
       produces = {},
       consumes = {CONSUMER_SUBJECT})
-  interface FlammeComponent {
+  public interface FlammeComponent {
     Any execute(Any multipayload);
   }
 
